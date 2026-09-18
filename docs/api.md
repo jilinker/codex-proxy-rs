@@ -325,6 +325,10 @@ OpenAI 明确返回 `server_is_overloaded`、`slow_down` 或模型容量不足�
 | --- | --- | --- | --- |
 | `GET` | `/api/key-usage/overview` | `startTime`、`endTime`、`model?` | 用量汇总、趋势、当前额度和北京时间今日健康时间线 |
 | `GET` | `/api/key-usage/records` | 同上，另含 `kind?`、`currentPage?`、`pageSize?` | 当前 Key 的成功请求或错误记录 |
+| `GET` | `/api/key-usage/accounts` | `currentPage?`、`pageSize?` | 当前 Key 已启用分组内账号的只读额度与 Token 用量摘要 |
+| `GET` | `/api/key-usage/accounts/detail` | `accountId` | 范围内单个账号的只读额度与按模型 Token 用量 |
+
+账号接口只使用服务端会话中的 Key 和 Key 配置的已启用账号分组确定范围，不接受 Key、分组或 Provider 范围参数。返回值不包含账号费用、凭据、上游原始错误和管理操作字段；额度读取使用已有持久化快照，不触发上游刷新。
 
 起止时间使用 RFC3339，开始必须早于结束，一次最多 31 天。模型按完整名称匹配；
 不接受 Key ID、账号、Provider 等范围参数或其他未知字段。页码默认 1，每页默认 20，允许 1–100 条；

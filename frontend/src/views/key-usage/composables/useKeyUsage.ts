@@ -1,3 +1,4 @@
+import type { Ref } from 'vue'
 import type { KeyUsageOverview, KeyUsageRecordKind } from '@/api/modules/key-usage'
 import { refDebounced, useDocumentVisibility, useTimeoutPoll } from '@vueuse/core'
 import dayjs from 'dayjs'
@@ -7,7 +8,7 @@ import { useRequestState } from '@/composables/useRequestState'
 import { useStablePagedQuery } from '@/composables/useStablePagedQuery'
 import { KEY_USAGE_TIME_ZONE } from '../utils/format'
 
-export function useKeyUsage() {
+export function useKeyUsage(active: Ref<boolean>) {
   const period = shallowRef('today')
   const model = shallowRef('')
   const selectedModel = refDebounced(model, 300)
@@ -85,8 +86,8 @@ export function useKeyUsage() {
 
   const visibility = useDocumentVisibility()
   const poll = useTimeoutPoll(refresh, computed(() => Math.max(1, Number(refreshInterval.value)) * 1000))
-  watch([visibility, refreshInterval], ([visible, interval]) => {
-    if (visible === 'visible' && interval !== '0')
+  watch([visibility, refreshInterval, active], ([visible, interval, enabled]) => {
+    if (visible === 'visible' && interval !== '0' && enabled)
       poll.resume()
     else
       poll.pause()

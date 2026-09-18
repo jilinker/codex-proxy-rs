@@ -50,6 +50,17 @@ async fn get(app: &Router, resource: &str, suffix: &str, cookie: &str) -> Respon
     response
 }
 
+async fn get_accounts(app: &Router, suffix: &str, cookie: &str) -> Response {
+    let path = format!("/api/key-usage/accounts{suffix}");
+    let response = app
+        .clone()
+        .oneshot(cookie_request(Method::GET, &path, cookie))
+        .await
+        .unwrap();
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+    response
+}
+
 fn assert_fields(value: &Value, expected: &[&str]) {
     let mut actual: Vec<_> = value
         .as_object()
@@ -213,6 +224,53 @@ async fn records_keep_pagination_and_hide_admin_and_upstream_data() {
 }
 
 #[tokio::test]
+async fn accounts_report_unbound_scope_without_reading_account_data() {
+    let fixture = fixtures::fixture().await;
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let cookie = login(&app, "key").await;
+    let response = get_accounts(&app, "?currentPage=1&pageSize=20", &cookie).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let data = response_json(response).await["data"].clone();
+    assert_eq!(data["scopeState"], "unbound");
+    assert_eq!(data["items"], json!([]));
+    assert_eq!(data["currentPage"], 1);
+    assert_eq!(data["pageSize"], 20);
+    assert_eq!(data["total"], 0);
+    assert!(!data.to_string().to_lowercase().contains("cost"));
+    assert!(!data.to_string().to_lowercase().contains("fee"));
+}
+
+#[tokio::test]
+async fn accounts_project_only_read_only_usage_fields_and_mask_identity() {
+    let fixture = fixtures::fixture().await;
+    fixtures::bind_primary_group(&fixture);
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let cookie = login(&app, "key").await;
+    let response = get_accounts(&app, "?currentPage=1&pageSize=20", &cookie).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let data = response_json(response).await["data"].clone();
+    assert_eq!(data["scopeState"], "available");
+    assert_eq!(data["total"], 2);
+    let account = &data["items"][0];
+    assert_eq!(account["id"], "acct_group_ready");
+    assert_eq!(account["identity"], "vi***com");
+    assert_eq!(account["quota"]["availability"], "unsupported");
+    assert_eq!(account["usage"]["totalTokensDisplay"], "—");
+    let body = data.to_string();
+    assert!(!body.contains("private-sentinel"));
+    assert!(!body.to_lowercase().contains("cost"));
+    assert!(!body.to_lowercase().contains("fee"));
+    assert!(!body.contains("credential"));
+
+    let response = get_accounts(&app, "/detail?accountId=acct_group_ready", &cookie).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let detail = response_json(response).await["data"].clone();
+    assert_eq!(detail["id"], "acct_group_ready");
+    assert_eq!(detail["usage"]["models"], json!([]));
+    assert!(!detail.to_string().to_lowercase().contains("cost"));
+}
+
+#[tokio::test]
 async fn missing_admin_and_revoked_sessions_cannot_read_key_usage() {
     let fixture = fixtures::fixture().await;
     let app = crate::openai::api_router_with_admin(fixture.services.clone());
@@ -233,6 +291,14 @@ async fn missing_admin_and_revoked_sessions_cannot_read_key_usage() {
         assert_eq!(response_json(response).await["code"], 40101);
         fixture.auth.enabled.store(true, Ordering::SeqCst);
     }
+    assert_eq!(
+        get_accounts(&app, "", "").await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        get_accounts(&app, "", &admin).await.status(),
+        StatusCode::FORBIDDEN
+    );
     assert!(fixture.observations.lock().unwrap().records.is_empty());
     assert!(fixture.observations.lock().unwrap().summaries.is_empty());
 }

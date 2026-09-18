@@ -716,6 +716,29 @@ impl ProviderAdmin for XaiAdminProvider {
         ))
     }
 
+    async fn quota_snapshot(
+        &self,
+        account_id: &ProviderAccountId,
+    ) -> Result<ProviderQuota, ProviderAdminError> {
+        let account = self.account(account_id).await?;
+        let lifecycle = self
+            .repository
+            .read_lifecycle(account_id)
+            .await
+            .map_err(map_repository_error)?;
+        let snapshot = self
+            .quota
+            .read_account_snapshot(account_id)
+            .await
+            .map_err(map_quota_error)?;
+        Ok(project_quota(
+            snapshot,
+            account.quota().is_exhausted(),
+            lifecycle.refresh_token_expires_at().copied(),
+            None,
+        ))
+    }
+
     async fn models(
         &self,
         account_id: &ProviderAccountId,

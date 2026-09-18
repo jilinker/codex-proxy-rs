@@ -503,6 +503,18 @@ impl GrokCredentialQuotaService {
         &self,
         account_id: &ProviderAccountId,
     ) -> Result<Option<GrokQuotaSnapshot>, GrokQuotaError> {
+        let snapshot = self.read_account_snapshot(account_id).await?;
+        if let Some(snapshot) = &snapshot {
+            self.scheduling.observe(snapshot);
+        }
+        Ok(snapshot)
+    }
+
+    /// 只读持久化快照且不更新调度投影
+    pub async fn read_account_snapshot(
+        &self,
+        account_id: &ProviderAccountId,
+    ) -> Result<Option<GrokQuotaSnapshot>, GrokQuotaError> {
         let Some(observation) = self
             .repository
             .quota(account_id)
@@ -519,7 +531,6 @@ impl GrokCredentialQuotaService {
             observed_at: observed_at.into(),
             billing: billing_presentation(&document)?,
         };
-        self.scheduling.observe(&snapshot);
         Ok(Some(snapshot))
     }
 }

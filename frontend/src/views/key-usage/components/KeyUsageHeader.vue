@@ -8,7 +8,7 @@ import BaseSelect from '@/components/base/BaseSelect.vue'
 import { useAuthStore } from '@/stores/modules/auth'
 import { useThemeStore } from '@/stores/modules/theme'
 
-defineProps<{ name?: string, prefix?: string, refreshing: boolean }>()
+defineProps<{ name?: string, prefix?: string, refreshing: boolean, showStatsControls: boolean }>()
 defineEmits<{ refresh: [] }>()
 const period = defineModel<string>('period', { required: true })
 const refreshInterval = defineModel<string>('refreshInterval', { required: true })
@@ -30,15 +30,15 @@ async function logout() {
 </script>
 
 <template>
-  <BasePageHeader title="使用统计">
+  <BasePageHeader title="Key 用量">
     <template #description>
       <span class="truncate leading-none">{{ name || '当前 API Key' }}</span>
       <span v-if="prefix" class="shrink-0 font-mono text-cp-sm leading-none text-cp-text-tertiary">{{ prefix }}…</span>
     </template>
     <template #actions>
       <div class="flex max-w-[calc(100vw-32px)] items-center justify-end gap-2">
-        <BaseSelect v-model="period" aria-label="统计时间范围" class="w-29" :options="[{ label: '今天', value: 'today' }, { label: '近 7 天', value: '7d' }, { label: '近 30 天', value: '30d' }]" />
-        <BaseSelect v-model="refreshInterval" aria-label="自动刷新频率" class="w-30" :options="[{ label: '30 秒刷新', value: '30' }, { label: '60 秒刷新', value: '60' }, { label: '暂停刷新', value: '0' }]" />
+        <BaseSelect v-if="showStatsControls" v-model="period" aria-label="统计时间范围" class="w-29" :options="[{ label: '今天', value: 'today' }, { label: '近 7 天', value: '7d' }, { label: '近 30 天', value: '30d' }]" />
+        <BaseSelect v-if="showStatsControls" v-model="refreshInterval" aria-label="自动刷新频率" class="w-30" :options="[{ label: '30 秒刷新', value: '30' }, { label: '60 秒刷新', value: '60' }, { label: '暂停刷新', value: '0' }]" />
         <BaseIconButton label="刷新用量" variant="secondary" :loading="refreshing" @click="$emit('refresh')">
           <RefreshCw class="size-4" />
         </BaseIconButton>

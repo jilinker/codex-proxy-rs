@@ -847,6 +847,9 @@ impl AccountStore for UnusedStore {
         &self,
         _: &[AccountUsageWindowQuery],
     ) -> AdminStoreResult<Vec<AccountUsageWindowResult>> {
+        if self.account.lock().expect("account").is_some() {
+            return Ok(Vec::new());
+        }
         Err(unavailable("account quota window usage"))
     }
 

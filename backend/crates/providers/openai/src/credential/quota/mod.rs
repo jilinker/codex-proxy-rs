@@ -1087,6 +1087,18 @@ impl CodexCredentialQuotaService {
         &self,
         account_id: &ProviderAccountId,
     ) -> Result<Option<CodexAccountQuotaSnapshot>, CodexCredentialQuotaError> {
+        let snapshot = self.read_account_snapshot(account_id).await?;
+        if let Some(snapshot) = &snapshot {
+            self.scheduling.observe(snapshot);
+        }
+        Ok(snapshot)
+    }
+
+    /// 只读持久化快照且不更新调度投影
+    pub async fn read_account_snapshot(
+        &self,
+        account_id: &ProviderAccountId,
+    ) -> Result<Option<CodexAccountQuotaSnapshot>, CodexCredentialQuotaError> {
         let account = self
             .store
             .get_account(account_id)
@@ -1129,7 +1141,6 @@ impl CodexCredentialQuotaService {
             &Value::Object(observation.quota.expose_to_provider().clone()),
         )?
         .with_quota_state(observation.state);
-        self.scheduling.observe(&snapshot);
         Ok(Some(snapshot))
     }
 

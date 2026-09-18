@@ -325,7 +325,9 @@ AuthService 每次恢复 Key 会话时重新检查 Key 是否存在且启用；K
 前端只维护一份 Auth Store，不在每个 API 请求上标记身份；401 会话失效、403 权限不足和 503 依赖故障分别处理。
 成功登录替换旧会话，登出必须确认服务端撤销。
 KeyUsageService 从 AuthService 的服务端身份确定唯一查询范围，复用 ClientKeyStore 的额度账本投影和
-ObservabilityStore 的范围查询；API 只输出单页所需的字段白名单，不复用管理员的宽响应。
+ObservabilityStore 的范围查询；账号用量仅查询 Key 显式配置且已启用分组的账号并集，读取 Provider
+已持久化额度快照，不触发上游请求或调度观测写入。API 只输出单页所需的字段白名单，不复用管理员的宽响应，
+账号投影不包含费用、凭据和管理操作字段。
 前端 `/key-usage` 独立于管理布局，不挂载管理员菜单或请求管理接口。
 
 ## 6. 路由、账号范围与 continuation

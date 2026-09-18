@@ -371,7 +371,10 @@ pub async fn initialize(
     let key_usage = Arc::new(use_case::key_usage::DefaultKeyUsageService::new(
         auth.clone(),
         store.client_keys(),
+        store.account_groups(),
+        store.accounts(),
         store.observability(),
+        registry.clone(),
     ));
     let openai = Arc::new(DefaultOpenAiService::new(
         openai,

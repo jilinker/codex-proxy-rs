@@ -19,6 +19,58 @@ pub(super) struct OverviewQuery {
     model: Option<String>,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct AccountsQuery {
+    current_page: Option<u32>,
+    page_size: Option<u16>,
+}
+
+impl AccountsQuery {
+    pub(super) fn into_domain(
+        self,
+    ) -> Result<gateway_admin::model::key_usage::KeyUsageAccountListQuery, AdminError> {
+        let current_page = self.current_page.unwrap_or(1);
+        let page_size = self.page_size.unwrap_or(20);
+        if current_page == 0 || !(1..=100).contains(&page_size) {
+            return Err(AdminError::invalid_request(
+                StatusCode::BAD_REQUEST,
+                "页码必须大于 0，每页数量为 1–100",
+            ));
+        }
+        Ok(gateway_admin::model::key_usage::KeyUsageAccountListQuery {
+            current_page,
+            page_size: PageSize::new(page_size).map_err(|_| {
+                AdminError::invalid_request(StatusCode::BAD_REQUEST, "每页数量不合法")
+            })?,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct AccountDetailQuery {
+    account_id: String,
+}
+
+impl AccountDetailQuery {
+    pub(super) fn into_domain(
+        self,
+    ) -> Result<gateway_admin::model::key_usage::KeyUsageAccountDetailQuery, AdminError> {
+        let account_id = self.account_id.trim().to_owned();
+        if account_id.is_empty()
+            || account_id.len() > 256
+            || account_id.chars().any(char::is_control)
+        {
+            return Err(AdminError::invalid_request(
+                StatusCode::BAD_REQUEST,
+                "账号 ID 不合法",
+            ));
+        }
+        Ok(gateway_admin::model::key_usage::KeyUsageAccountDetailQuery { account_id })
+    }
+}
+
 impl OverviewQuery {
     pub(super) fn into_domain(self) -> Result<KeyUsageQuery, AdminError> {
         let parse = |value: &str| {

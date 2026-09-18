@@ -71,6 +71,103 @@ export interface KeyUsagePage {
   total: number
 }
 
+export type KeyUsageAccountScopeState = 'unbound' | 'no_enabled_groups' | 'available'
+export type KeyUsageQuotaAvailability = 'available' | 'unsupported' | 'unobserved' | 'unavailable'
+
+export interface KeyUsageAccountQuotaWindow {
+  key: string
+  group: string
+  limitId: string | null
+  limitName: string | null
+  role: string | null
+  windowSeconds: number | null
+  labelDisplay: string
+  windowLabelDisplay: string
+  usedPercent: number | null
+  usedPercentDisplay: string
+  limitReached: boolean
+  localUsage: Record<string, unknown> | null
+  resetAtDisplay: string
+}
+
+export interface KeyUsageAccountQuota {
+  availability: KeyUsageQuotaAvailability
+  refreshedAtDisplay: string
+  limitReached: boolean
+  windows: KeyUsageAccountQuotaWindow[]
+}
+
+export interface KeyUsageAccountUsageSummary {
+  windowLabelDisplay: string
+  requestCount: number | null
+  requestCountDisplay: string
+  successCount: number | null
+  successRate: number | null
+  successRateDisplay: string
+  totalTokens: number | null
+  totalTokensDisplay: string
+  lastUsedAt: string | null
+  lastUsedAtDisplay: string
+}
+
+export interface KeyUsageAccountModelUsage {
+  model: string
+  requestCount: number
+  requestCountDisplay: string
+  successRate: number | null
+  successRateDisplay: string
+  inputTokens: number | null
+  inputTokensDisplay: string
+  outputTokens: number | null
+  outputTokensDisplay: string
+  cachedTokens: number | null
+  cachedTokensDisplay: string
+  reasoningTokens: number | null
+  reasoningTokensDisplay: string
+  totalTokens: number | null
+  totalTokensDisplay: string
+  lastUsedAt: string
+  lastUsedAtDisplay: string
+}
+
+export interface KeyUsageAccount {
+  id: string
+  identity: string | null
+  provider: string
+  authenticationKind: string
+  planType: string | null
+  planTypeDisplay: string
+  status: string
+  quota: KeyUsageAccountQuota
+  usage: KeyUsageAccountUsageSummary
+}
+
+export interface KeyUsageAccountDetail extends Omit<KeyUsageAccount, 'usage'> {
+  usage: KeyUsageAccountUsageSummary & {
+    inputTokens: number | null
+    inputTokensDisplay: string
+    outputTokens: number | null
+    outputTokensDisplay: string
+    cachedTokens: number | null
+    cachedTokensDisplay: string
+    reasoningTokens: number | null
+    reasoningTokensDisplay: string
+    createdTokens: number | null
+    createdTokensDisplay: string
+    readTokens: number | null
+    readTokensDisplay: string
+    models: KeyUsageAccountModelUsage[]
+  }
+}
+
+export interface KeyUsageAccountPage {
+  scopeState: KeyUsageAccountScopeState
+  items: KeyUsageAccount[]
+  currentPage: number
+  pageSize: number
+  total: number
+}
+
 export interface KeyUsageQuery {
   startTime: string
   endTime: string
@@ -94,6 +191,27 @@ export function getKeyUsageRecords(
     url: '/api/key-usage/records',
     method: 'GET',
     params,
+    ...options,
+  })
+}
+
+export function getKeyUsageAccounts(
+  params: { currentPage: number, pageSize: number },
+  options: RequestOptions = {},
+) {
+  return request<KeyUsageAccountPage>({
+    url: '/api/key-usage/accounts',
+    method: 'GET',
+    params,
+    ...options,
+  })
+}
+
+export function getKeyUsageAccountDetail(accountId: string, options: RequestOptions = {}) {
+  return request<KeyUsageAccountDetail>({
+    url: '/api/key-usage/accounts/detail',
+    method: 'GET',
+    params: { accountId },
     ...options,
   })
 }

@@ -25,10 +25,60 @@ where
     Router::new()
         .route("/api/key-usage/overview", get(overview::<S>))
         .route("/api/key-usage/records", get(records::<S>))
+        .route("/api/key-usage/accounts", get(accounts::<S>))
+        .route("/api/key-usage/accounts/detail", get(account_detail::<S>))
         .route("/api/key-usage", any(not_found))
         .route("/api/key-usage/{*path}", any(not_found))
         .method_not_allowed_fallback(method_not_allowed)
         .layer(middleware::map_response(no_store))
+}
+
+async fn accounts<S>(
+    State(state): State<S>,
+    headers: HeaderMap,
+    AdminQuery(query): AdminQuery<query::AccountsQuery>,
+) -> Result<impl IntoResponse, AdminError>
+where
+    S: SessionState + Send + Sync,
+{
+    let accounts = state
+        .admin_services()
+        .key_usage()
+        .accounts(
+            session_cookie::value(&headers).as_deref(),
+            query.into_domain()?,
+        )
+        .await
+        .map_err(map_admin_service_error)?
+        .ok_or_else(AdminError::session_required)?;
+    Ok(AdminResponse::new(
+        StatusCode::OK,
+        AdminEnvelope::ok(presenter::accounts(accounts)),
+    ))
+}
+
+async fn account_detail<S>(
+    State(state): State<S>,
+    headers: HeaderMap,
+    AdminQuery(query): AdminQuery<query::AccountDetailQuery>,
+) -> Result<impl IntoResponse, AdminError>
+where
+    S: SessionState + Send + Sync,
+{
+    let account = state
+        .admin_services()
+        .key_usage()
+        .account_detail(
+            session_cookie::value(&headers).as_deref(),
+            query.into_domain()?,
+        )
+        .await
+        .map_err(map_admin_service_error)?
+        .ok_or_else(AdminError::session_required)?;
+    Ok(AdminResponse::new(
+        StatusCode::OK,
+        AdminEnvelope::ok(presenter::account_detail(account)),
+    ))
 }
 
 async fn overview<S>(

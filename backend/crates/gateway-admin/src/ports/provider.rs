@@ -183,6 +183,14 @@ pub trait ProviderAdmin: Send + Sync {
         request: ProviderQuotaRequest,
     ) -> Result<ProviderQuota, ProviderAdminError>;
 
+    /// 只读已持久化的额度快照
+    async fn quota_snapshot(
+        &self,
+        _account_id: &ProviderAccountId,
+    ) -> Result<ProviderQuota, ProviderAdminError> {
+        Err(ProviderAdminError::new(ProviderAdminErrorKind::Unsupported))
+    }
+
     /// 历史观测的协议字段仅由具体 Provider 解释；不支持时保留累计估算。
     fn quota_forecast_observation(
         &self,

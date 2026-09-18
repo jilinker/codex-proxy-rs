@@ -536,6 +536,22 @@ impl ProviderAdmin for OpenAiAdminProvider {
         Ok(project_quota(snapshot, &account))
     }
 
+    async fn quota_snapshot(
+        &self,
+        account_id: &ProviderAccountId,
+    ) -> Result<ProviderQuota, ProviderAdminError> {
+        let account = self.account(account_id).await?;
+        if account.authentication_kind() == crate::credential::CODEX_AUTHENTICATION_KIND_API_KEY {
+            return Ok(project_quota(None, &account));
+        }
+        let snapshot = self
+            .quota
+            .read_account_snapshot(account_id)
+            .await
+            .map_err(map_quota_error)?;
+        Ok(project_quota(snapshot, &account))
+    }
+
     fn quota_forecast_observation(
         &self,
         document: &ProviderDocument,

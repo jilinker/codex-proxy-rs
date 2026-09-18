@@ -1,6 +1,9 @@
 use crate::{admin::AdminTestFixture, support::key_fixture};
 use chrono::{Duration, Utc};
 use gateway_admin::model::{
+    Revision,
+    account_groups::{AccountGroupColor, AccountGroupRef},
+    accounts::{AccountPageItem, AccountRecord},
     client_keys::ClientKeyRecord,
     observability::{
         AttemptMetrics, CostCoverage, CurrencyCost, DecimalAmount, Granularity, OpsError,
@@ -9,9 +12,16 @@ use gateway_admin::model::{
     },
 };
 use gateway_core::{
+    account::{
+        AccountStatusFacts, AccountWeight, CredentialState, QuotaState, resolve_account_status,
+    },
     engine::budget::{ClientBudgetLimits, ClientBudgetStatus},
     policy::{ClientApiKeyId, RateLimits},
+    routing::{AccountGroupId, ProviderKind},
 };
+use std::time::SystemTime;
+
+const PRIMARY_GROUP_ID: &str = "grp_11111111111111111111111111111111";
 
 pub(super) async fn fixture() -> AdminTestFixture {
     let fixture = key_fixture().await;
@@ -85,6 +95,60 @@ pub(super) async fn fixture() -> AdminTestFixture {
     fixture.usage_records.lock().unwrap().push(usage_record());
     fixture.ops_errors.lock().unwrap().push(error_record());
     fixture
+}
+
+pub(super) fn bind_primary_group(fixture: &AdminTestFixture) {
+    fixture.client_key.lock().unwrap().as_mut().unwrap().groups = vec![AccountGroupRef {
+        id: AccountGroupId::new(PRIMARY_GROUP_ID).unwrap(),
+        name: "Primary routing".to_owned(),
+        color: AccountGroupColor::parse("#2563EBFF").unwrap(),
+        enabled: true,
+    }];
+    *fixture.account.lock().unwrap() = Some(account());
+}
+
+fn account() -> AccountPageItem {
+    let now = Utc::now();
+    let facts = AccountStatusFacts {
+        enabled: true,
+        credential_state: CredentialState::Ready,
+        access_token_expires_at: None,
+        quota: QuotaState::unknown(),
+        cooldown: None,
+        last_error_reason: None,
+        last_error_message: None,
+    };
+    AccountPageItem {
+        account: AccountRecord {
+            notes: Some("private-sentinel".to_owned()),
+            model_access: Default::default(),
+            id: "acct_group_ready".to_owned(),
+            provider_kind: ProviderKind::new("openai").unwrap(),
+            groups: Vec::new(),
+            name: "private-sentinel".to_owned(),
+            email: Some("visible@example.com".to_owned()),
+            upstream_user_id: Some("private-sentinel".to_owned()),
+            upstream_account_id: Some("private-sentinel".to_owned()),
+            plan_type: Some("pro".to_owned()),
+            authentication_kind: "api_key".to_owned(),
+            credential_revision: Revision::new(1).unwrap(),
+            has_refresh_token: false,
+            access_token_expires_at: None,
+            next_refresh_at: None,
+            enabled: true,
+            concurrency_limit: None,
+            weight: AccountWeight::default(),
+            outbound_proxy: None,
+            credential_state: CredentialState::Ready,
+            credential_observed_at: now,
+            quota: QuotaState::unknown(),
+            last_error_reason: None,
+            last_error_message: None,
+            created_at: now,
+            updated_at: now,
+        },
+        projection: resolve_account_status(&facts, SystemTime::now()),
+    }
 }
 
 fn usage_record() -> UsageListRecord {
