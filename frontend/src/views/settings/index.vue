@@ -20,7 +20,6 @@ import RequestQueueCard from './components/RequestQueueCard.vue'
 import ResponseBodyLimitCard from './components/ResponseBodyLimitCard.vue'
 import RotationStrategyCard from './components/RotationStrategyCard.vue'
 import RuntimeSettingsCard from './components/RuntimeSettingsCard.vue'
-import SessionKeepaliveCard from './components/SessionKeepaliveCard.vue'
 import TokenRefreshCard from './components/TokenRefreshCard.vue'
 import { useAdminApiKey } from './composables/useAdminApiKey'
 import { useSettingsForm } from './composables/useSettingsForm'
@@ -142,7 +141,6 @@ onMounted(() => {
           v-model:max-concurrent-per-account="maxConcurrentPerAccountValue"
           v-model:request-interval-ms="requestIntervalMsValue"
         />
-        <SessionKeepaliveCard v-model="form.sessionKeepaliveEnabled" :disabled="saving || loading || !!error" />
         <TokenRefreshCard v-model:refresh-margin-seconds="refreshMarginSecondsValue" v-model:refresh-concurrency="refreshConcurrencyValue" />
         <ResponseBodyLimitCard v-model="responsesMaxDecompressedBodyMiBValue" />
         <RequestQueueCard

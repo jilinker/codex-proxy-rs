@@ -973,8 +973,6 @@ struct StaticSettingsStore;
 impl SettingsStore for StaticSettingsStore {
     async fn load_runtime_settings(&self) -> AdminStoreResult<RuntimeSettings> {
         Ok(RuntimeSettings {
-            oam_proxy: String::new(),
-            session_keepalive_enabled: false,
             disable_fast: false,
             request_location_enabled: false,
             request_location: Default::default(),
@@ -1403,8 +1401,6 @@ async fn accounts_update_should_commit_then_release_disabled_account_and_publish
         .update(
             &context("update-request"),
             UpdateAccount {
-                enable_session_keepalive: None,
-                session_keepalive_models: None,
                 notes: None,
                 model_access: Default::default(),
                 outbound_proxy: None,
@@ -1444,8 +1440,6 @@ async fn accounts_update_should_not_notify_provider_when_store_commit_fails() {
         .update(
             &context("update-failure"),
             UpdateAccount {
-                enable_session_keepalive: None,
-                session_keepalive_models: None,
                 notes: None,
                 model_access: Default::default(),
                 outbound_proxy: None,
@@ -2528,8 +2522,6 @@ fn quota_local_usage(account_id: &str, total_tokens: u64) -> AccountUsage {
 pub(super) fn account_record(kind: &str) -> AccountRecord {
     let now = Utc::now();
     AccountRecord {
-        enable_session_keepalive: false,
-        session_keepalive_models: vec!["5.6 sol".into(), "6".into()],
         notes: None,
         model_access: Default::default(),
         outbound_proxy: None,

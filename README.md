@@ -19,6 +19,9 @@
 > [!NOTE]
 > 本项目提供 Responses API，不支持 `/v1/chat/completions`。接入前请确认客户端支持 Responses 协议。
 
+> 会话保活功能单独维护于[实验分支](https://github.com/zyycn/codex-proxy-rs/tree/experimental/session-keepalive)，
+> 使用[独立实验构建与数据目录](https://github.com/zyycn/codex-proxy-rs/blob/experimental/session-keepalive/deploy/experimental.md)，不包含在正式版中。
+
 ## 快速开始
 
 使用 Docker Compose 部署版本固定的发布镜像，同时启动 PostgreSQL 和 Redis。

@@ -28,7 +28,6 @@ const MAXIMUM_CATALOG_STABILITY_ATTEMPTS: usize = 4;
 /// Store 在一个一致性读取中提供的调度设置事实。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotSettingsFacts {
-    session_keepalive_enabled: bool,
     disable_fast: bool,
     request_location_enabled: bool,
     request_location: crate::account::RequestLocation,
@@ -45,12 +44,6 @@ pub struct SnapshotSettingsFacts {
 }
 
 impl SnapshotSettingsFacts {
-    #[must_use]
-    pub const fn with_session_keepalive_enabled(mut self, enabled: bool) -> Self {
-        self.session_keepalive_enabled = enabled;
-        self
-    }
-
     #[must_use]
     pub const fn with_disable_fast(mut self, disable_fast: bool) -> Self {
         self.disable_fast = disable_fast;
@@ -98,7 +91,6 @@ impl SnapshotSettingsFacts {
     ) -> Self {
         Self {
             disable_fast: false,
-            session_keepalive_enabled: false,
             request_location_enabled: false,
             request_location: crate::account::RequestLocation::default(),
             max_concurrent_per_account,
@@ -537,7 +529,6 @@ async fn compile_runtime_snapshot(
     .map(|snapshot| {
         snapshot
             .with_disable_fast(facts.settings.disable_fast)
-            .with_session_keepalive_enabled(facts.settings.session_keepalive_enabled)
             .with_request_location(request_location)
             .with_responses_max_decompressed_body_bytes(decompressed_body_limit)
             .with_client_queue_policy(client_queue_policy)
@@ -551,7 +542,6 @@ async fn compile_runtime_snapshot(
 /// 数据面使用的不可变配置快照。
 #[derive(Debug, Clone)]
 pub struct RuntimeSnapshot {
-    session_keepalive_enabled: bool,
     disable_fast: bool,
     responses_max_decompressed_body_bytes: std::num::NonZeroUsize,
     request_location: Option<crate::account::RequestLocation>,
@@ -571,12 +561,6 @@ pub struct RuntimeSnapshot {
 }
 
 impl RuntimeSnapshot {
-    #[must_use]
-    pub const fn with_session_keepalive_enabled(mut self, enabled: bool) -> Self {
-        self.session_keepalive_enabled = enabled;
-        self
-    }
-
     #[must_use]
     pub const fn with_disable_fast(mut self, disable_fast: bool) -> Self {
         self.disable_fast = disable_fast;
@@ -688,7 +672,6 @@ impl RuntimeSnapshot {
             responses_max_decompressed_body_bytes: std::num::NonZeroUsize::new(64 * 1024 * 1024)
                 .expect("positive default limit"),
             disable_fast: false,
-            session_keepalive_enabled: false,
             request_location: None,
             revision,
             account_selection_policy,
@@ -1001,7 +984,6 @@ impl RuntimeSnapshot {
         Ok(RoutingPlan {
             config_revision: self.revision,
             disable_fast: self.disable_fast || account_scope.disable_fast(),
-            session_keepalive_enabled: self.session_keepalive_enabled,
             request_location: self.request_location.clone(),
             account_selection_policy: self.account_selection_policy,
             operation: operation.kind(),
@@ -1045,7 +1027,6 @@ impl RuntimeSnapshot {
         Ok(RoutingPlan {
             config_revision: self.revision,
             disable_fast: self.disable_fast || account_scope.disable_fast(),
-            session_keepalive_enabled: self.session_keepalive_enabled,
             request_location: self.request_location.clone(),
             account_selection_policy: self.account_selection_policy,
             operation: operation.kind(),

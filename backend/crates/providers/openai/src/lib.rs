@@ -3,9 +3,7 @@
 mod admin;
 pub mod config;
 mod provider;
-mod session_manager;
 mod session_transport;
-pub use session_manager::{SESSION_KEEPALIVE_MODELS, SessionManager};
 
 use std::sync::Arc;
 
@@ -98,12 +96,6 @@ pub async fn initialize(
     ));
     let desktop_release_status = desktop_release.status();
     let repository = CodexCredentialRepository::new(Arc::clone(&accounts));
-    let sessions = Arc::new(SessionManager::new(
-        repository.clone(),
-        Arc::clone(&runtime_policy),
-        profile.clone(),
-        config.base_url().to_owned(),
-    ));
     let websocket_pool = Arc::new(CodexWebSocketPool::with_config(
         config.websocket_pool_config(),
     ));
@@ -152,8 +144,7 @@ pub async fn initialize(
             config.stream_max_retries(),
         )
         .map_err(OpenAiInitializeError::Provider)?
-        .with_session_identity(session_identity)
-        .with_session_manager(Arc::clone(&sessions)),
+        .with_session_identity(session_identity),
     );
     let token_client = Arc::new(
         credential::token_client::openai_token_client(
@@ -198,7 +189,6 @@ pub async fn initialize(
         profile,
         accounts,
         OpenAiAdminServices {
-            sessions: Arc::clone(&sessions),
             credentials: credential_admin,
             oauth: oauth_admin,
             profile_statistics,
@@ -209,7 +199,6 @@ pub async fn initialize(
         desktop_release_status,
     ));
     let worker_contributions = provider::worker_contributions(
-        sessions,
         refresh,
         quota,
         catalog,

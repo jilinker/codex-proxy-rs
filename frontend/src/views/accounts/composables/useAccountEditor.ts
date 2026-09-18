@@ -21,8 +21,6 @@ export function useAccountEditor(options: {
   const editingAccountId = shallowRef<string | null>(null)
   const notes = shallowRef('')
   const schedulingEnabled = shallowRef(true)
-  const enableSessionKeepalive = shallowRef(false)
-  const sessionKeepaliveModels = ref<string[]>([])
   const concurrencyLimit = shallowRef('')
   const weight = shallowRef('1')
   const modelAccess = ref<AccountModelAccess | undefined>()
@@ -71,8 +69,6 @@ export function useAccountEditor(options: {
     proxyMode.value = 'preserve'
     proxyId.value = ''
     schedulingEnabled.value = account.enabled
-    enableSessionKeepalive.value = account.enableSessionKeepalive
-    sessionKeepaliveModels.value = [...(account.sessionKeepaliveModels ?? ['gpt-5.6-sol', 'gpt-6-astra'])]
     concurrencyLimit.value = concurrencyLimitInput(account.concurrencyLimit)
     weight.value = String(account.weight)
     modelAccess.value = { ...account.modelAccess, models: [...account.modelAccess.models] }
@@ -99,10 +95,6 @@ export function useAccountEditor(options: {
         return
       }
     }
-    if (editingAccount.value?.provider === 'openai' && (sessionKeepaliveModels.value.length < 1 || sessionKeepaliveModels.value.length > 32)) {
-      toast.warning('请选择 1～32 个重写模型')
-      return
-    }
     const modelError = accountModelAccessError(modelAccess.value)
     if (modelError) {
       toast.warning(modelError)
@@ -124,8 +116,6 @@ export function useAccountEditor(options: {
         notes: notes.value,
         outboundProxyId: proxyMode.value === 'preserve' ? undefined : proxyMode.value === 'direct' ? '' : proxyId.value.trim(),
         enabled: schedulingEnabled.value,
-        enableSessionKeepalive: enableSessionKeepalive.value,
-        sessionKeepaliveModels: editingAccount.value?.provider === 'openai' ? sessionKeepaliveModels.value : undefined,
         concurrencyLimit: scheduling.values.concurrencyLimit,
         weight: scheduling.values.weight,
         modelAccess: modelAccess.value,
@@ -160,7 +150,6 @@ export function useAccountEditor(options: {
     proxyMode.value = 'preserve'
     proxyId.value = ''
     schedulingEnabled.value = true
-    enableSessionKeepalive.value = false
     concurrencyLimit.value = ''
     weight.value = '1'
     modelAccess.value = undefined
@@ -175,8 +164,6 @@ export function useAccountEditor(options: {
     editingAccount,
     notes,
     schedulingEnabled,
-    enableSessionKeepalive,
-    sessionKeepaliveModels,
     concurrencyLimit,
     weight,
     modelAccess,

@@ -85,9 +85,8 @@ pub struct CompletedCodexOAuthAuthorization<T> {
 
 /// OAuth exchange 后唯一的 credential preparation 结果。
 pub enum CompletedCodexOAuthCredential {
-    // 账号可配置模型目录，间接存放两种准备结果以保持异步返回值大小稳定。
-    Create(Box<NewProviderAccount>),
-    Reauthorize(Box<PreparedCodexCredentialRotation>),
+    Create(NewProviderAccount),
+    Reauthorize(PreparedCodexCredentialRotation),
 }
 
 impl fmt::Debug for CompletedCodexOAuthCredential {
@@ -543,7 +542,7 @@ impl CodexOAuthAdminService {
             .map_err(|_| CodexOAuthAdminError::TokenRejected)?;
         secret.id_token = Some(id_token);
         let credential = if let Some(current) = current {
-            CompletedCodexOAuthCredential::Reauthorize(Box::new(
+            CompletedCodexOAuthCredential::Reauthorize(
                 self.credentials
                     .prepare_refreshed_oauth_rotation(
                         current,
@@ -552,7 +551,7 @@ impl CodexOAuthAdminService {
                         None,
                     )
                     .map_err(map_admin_error)?,
-            ))
+            )
         } else {
             let account_id = format!("acct_{}", Uuid::now_v7().simple());
             let prepared = self
@@ -568,15 +567,13 @@ impl CodexOAuthAdminService {
                     enabled: true,
                 })
                 .map_err(map_admin_error)?;
-            CompletedCodexOAuthCredential::Create(Box::new(
-                gateway_core::account::NewProviderAccount {
-                    model_access: Default::default(),
-                    account: prepared
-                        .account
-                        .with_outbound_proxy(mutation.outbound_proxy().cloned()),
-                    credential: prepared.credential,
-                },
-            ))
+            CompletedCodexOAuthCredential::Create(gateway_core::account::NewProviderAccount {
+                model_access: Default::default(),
+                account: prepared
+                    .account
+                    .with_outbound_proxy(mutation.outbound_proxy().cloned()),
+                credential: prepared.credential,
+            })
         };
         Ok((mutation, credential))
     }

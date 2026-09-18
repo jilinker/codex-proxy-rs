@@ -13,7 +13,6 @@ pub(super) const MODEL_ETAG_WORKER_OWNER: &str = "openai-model-etag";
 pub(super) const MODEL_CATALOG_WORKER_OWNER: &str = "openai-model-catalog";
 
 pub(crate) fn worker_contributions(
-    sessions: Arc<crate::SessionManager>,
     refresh: Arc<CodexCredentialRefreshService>,
     quota: Arc<CodexCredentialQuotaService>,
     catalog: Arc<CodexCredentialCatalogService>,
@@ -27,18 +26,7 @@ pub(crate) fn worker_contributions(
     let etag_id = WorkerId::try_new(WorkerKind::QuotaCatalogHealth, MODEL_ETAG_WORKER_OWNER)?;
     let desktop_release_id =
         WorkerId::try_new(WorkerKind::QuotaCatalogHealth, DESKTOP_RELEASE_WORKER_OWNER)?;
-    let mut contributions = vec![WorkerContribution::Registration(
-        WorkerRegistration::try_new(
-            WorkerId::try_new(WorkerKind::QuotaCatalogHealth, "openai-session-keepalive")?,
-            WorkerRunnable::Daemon {
-                restart: DaemonRestartPolicy::try_new(
-                    WORKER_INITIAL_BACKOFF,
-                    WORKER_MAXIMUM_BACKOFF,
-                )?,
-                task: Box::new(SessionKeepaliveTask { sessions }),
-            },
-        )?,
-    )];
+    let mut contributions = Vec::new();
     if oauth_refresh_enabled {
         contributions.push(WorkerContribution::Registration(scheduled_registration(
             refresh_id,
@@ -280,15 +268,5 @@ impl DaemonTask for OpenAiCatalogEtagTask {
                 }
             }
         })
-    }
-}
-
-struct SessionKeepaliveTask {
-    sessions: Arc<crate::SessionManager>,
-}
-
-impl DaemonTask for SessionKeepaliveTask {
-    fn run(&self, cancellation: CancellationToken) -> BoxFuture<'_, Result<(), WorkerTaskError>> {
-        self.sessions.run(cancellation)
     }
 }

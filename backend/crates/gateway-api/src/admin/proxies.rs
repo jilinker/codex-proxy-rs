@@ -48,8 +48,6 @@ struct RemoveAccountRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CreateRequest {
-    #[serde(default)]
-    is_dynamic: bool,
     location: Option<gateway_core::account::RequestLocation>,
     name: String,
     proxy_url: AccountProxyUpdate,
@@ -58,7 +56,6 @@ struct CreateRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UpdateRequest {
-    is_dynamic: Option<bool>,
     #[serde(default, deserialize_with = "deserialize_location_update")]
     location: Option<Option<gateway_core::account::RequestLocation>>,
     id: String,
@@ -130,7 +127,6 @@ struct ProxyAccountView {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProxyView {
-    is_dynamic: bool,
     location: Option<gateway_core::account::RequestLocation>,
     id: String,
     name: String,
@@ -148,7 +144,6 @@ impl From<ProxyRecord> for ProxyView {
     fn from(record: ProxyRecord) -> Self {
         let endpoint = record.proxy.endpoint();
         Self {
-            is_dynamic: record.is_dynamic,
             location: record.location,
             id: record.id,
             name: record.name,
@@ -330,7 +325,6 @@ where
         .proxies()
         .create(
             NewProxy {
-                is_dynamic: request.is_dynamic,
                 location: request.location,
                 name: request.name,
                 proxy,
@@ -390,7 +384,6 @@ where
         .proxies()
         .update(
             UpdateProxy {
-                is_dynamic: request.is_dynamic,
                 location: request.location,
                 id: request.id,
                 revision: revision(request.revision)?,

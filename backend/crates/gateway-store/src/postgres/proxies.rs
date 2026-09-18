@@ -100,7 +100,6 @@ fn record(row: PgRow) -> StoreResult<ProxyRecord> {
     let ipv6: Option<String> = row.try_get("last_test_ipv6").map_err(|_| invalid())?;
     let latency: Option<i64> = row.try_get("last_test_latency_ms").map_err(|_| invalid())?;
     Ok(ProxyRecord {
-        is_dynamic: row.try_get("is_dynamic").map_err(|_| invalid())?,
         location: location_from_row(&row)?,
         id: row.try_get("id").map_err(|_| invalid())?,
         name: row.try_get("name").map_err(|_| invalid())?,
@@ -204,9 +203,8 @@ pub(crate) async fn ensure_proxy_for_url(
     name: Option<&str>,
 ) -> StoreResult<(String, bool)> {
     lock_url(transaction, proxy).await?;
-    if let Some((id, is_dynamic)) = sqlx::query_as::<_, (String, bool)>("select id, is_dynamic from outbound_proxies where proxy_url = $1 order by created_at, id limit 1 for share")
+    if let Some(id) = sqlx::query_scalar::<_, String>("select id from outbound_proxies where proxy_url = $1 order by created_at, id limit 1 for share")
         .bind(proxy.expose_url()).fetch_optional(&mut **transaction).await.map_err(|_| unavailable())? {
-        if is_dynamic { return Err(dynamic_error("动态代理不能绑定为业务代理")); }
         return Ok((id, false));
     }
     let id = format!("proxy_{}", uuid::Uuid::now_v7().simple());
@@ -232,8 +230,8 @@ pub(crate) async fn resolve_proxy_selection(
             Ok((Some(id), Some(proxy.clone())))
         }
         AccountProxySelection::Saved(id) => {
-            let (value, is_dynamic): (String, bool) = sqlx::query_as(
-                "select proxy_url, is_dynamic from outbound_proxies where id = $1 for share",
+            let value: String = sqlx::query_scalar(
+                "select proxy_url from outbound_proxies where id = $1 for share",
             )
             .bind(id)
             .fetch_optional(&mut **transaction)
@@ -243,9 +241,6 @@ pub(crate) async fn resolve_proxy_selection(
                 entity: ENTITY,
                 id: id.clone(),
             })?;
-            if is_dynamic {
-                return Err(dynamic_error("动态代理不能绑定为业务代理"));
-            }
             Ok((
                 Some(id.clone()),
                 Some(OutboundProxy::parse(&value).map_err(|_| invalid())?),
@@ -452,15 +447,7 @@ impl ProxyStore for PgProxyRepository {
             return Err(store_error(conflict(id)));
         }
         let record = match self.get(id).await {
-            Ok(record) if !record.is_dynamic => record,
-            Ok(_) => {
-                sqlx::query("select pg_advisory_unlock_shared(hashtextextended($1, 739219))")
-                    .bind(id)
-                    .execute(&mut connection)
-                    .await
-                    .map_err(|_| store_error(unavailable()))?;
-                return Err(store_error(dynamic_error("动态代理不能用于账号导入")));
-            }
+            Ok(record) => record,
             Err(error) => {
                 // 拒绝预留时先等待数据库释放锁，避免连接关闭尚未生效就误挡后续代理操作。
                 sqlx::query("select pg_advisory_unlock_shared(hashtextextended($1, 739219))")
@@ -556,9 +543,6 @@ impl ProxyStore for PgProxyRepository {
         if !created {
             return Err(store_error(conflict(&id)));
         }
-        set_dynamic(&mut transaction, &id, command.is_dynamic)
-            .await
-            .map_err(store_error)?;
         save_location(&mut transaction, &id, command.location.as_ref())
             .await
             .map_err(store_error)?;
@@ -567,7 +551,7 @@ impl ProxyStore for PgProxyRepository {
             context,
             "create",
             &id,
-            &["name", "proxy_url", "location", "is_dynamic"],
+            &["name", "proxy_url", "location"],
             revision,
         )
         .await
@@ -630,11 +614,6 @@ impl ProxyStore for PgProxyRepository {
         if changed.rows_affected() != 1 {
             return Err(store_error(conflict(&command.id)));
         }
-        if let Some(is_dynamic) = command.is_dynamic {
-            set_dynamic(&mut transaction, &command.id, is_dynamic)
-                .await
-                .map_err(store_error)?;
-        }
         if let Some(location) = &command.location {
             save_location(&mut transaction, &command.id, location.as_ref())
                 .await
@@ -648,9 +627,9 @@ impl ProxyStore for PgProxyRepository {
             "update",
             &command.id,
             if command.location.is_some() {
-                &["name", "proxy_url", "location", "is_dynamic"]
+                &["name", "proxy_url", "location"]
             } else {
-                &["name", "proxy_url", "is_dynamic"]
+                &["name", "proxy_url"]
             },
             revision,
         )
@@ -733,10 +712,6 @@ impl ProxyStore for PgProxyRepository {
         exclude_active_imports(&mut transaction, id)
             .await
             .map_err(store_error)?;
-        sqlx::query("select id from runtime_settings where id = 1 for update")
-            .execute(&mut *transaction)
-            .await
-            .map_err(|_| store_error(unavailable()))?;
         let updated = sqlx::query("update outbound_proxies set last_test_at = now(), last_test_success = $3, last_test_latency_ms = $4, last_test_ip = $5, last_test_ipv4 = $6, last_test_ipv6 = $7, last_test_message = $8 where id = $1 and revision = $2")
             .bind(id).bind(i64::try_from(revision.get()).map_err(|_| store_error(invalid()))?)
             .bind(result.success).bind(i64::try_from(result.latency_ms).map_err(|_| store_error(invalid()))?)
@@ -771,35 +746,4 @@ impl ProxyStore for PgProxyRepository {
             .map_err(|_| store_error(unavailable()))?;
         self.get(id).await
     }
-}
-
-fn dynamic_error(message: &str) -> StoreError {
-    StoreError::InvalidData {
-        entity: ENTITY,
-        message: message.to_owned(),
-    }
-}
-
-async fn set_dynamic(
-    transaction: &mut Transaction<'_, Postgres>,
-    id: &str,
-    enabled: bool,
-) -> StoreResult<()> {
-    // 调用方已锁定全局配置版本，角色变更与账号绑定按同一顺序串行化。
-    if enabled {
-        let conflict: bool = sqlx::query_scalar("select exists(select 1 from outbound_proxies where is_dynamic and id <> $1) or exists(select 1 from provider_accounts where outbound_proxy_id = $1)")
-            .bind(id).fetch_one(&mut **transaction).await.map_err(|_| unavailable())?;
-        if conflict {
-            return Err(dynamic_error(
-                "仅支持一个动态代理，且不能将已关联业务账号的代理设为动态代理",
-            ));
-        }
-    }
-    sqlx::query("update outbound_proxies set is_dynamic = $2 where id = $1")
-        .bind(id)
-        .bind(enabled)
-        .execute(&mut **transaction)
-        .await
-        .map_err(|_| unavailable())?;
-    Ok(())
 }

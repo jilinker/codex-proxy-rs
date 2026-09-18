@@ -186,12 +186,11 @@ impl ProxiesService for DefaultProxiesService {
             .map(|location| location.normalized())
             .transpose()
             .map_err(|_| AdminError::invalid("代理位置不合法"))?;
-        let dynamic = command.is_dynamic;
         let result = self
             .store
             .create(command, context)
             .await
-            .map_err(|error| dynamic_mutation_error(error, dynamic))?;
+            .map_err(|error| map_store_error(error, "proxy"))?;
         publish_committed(self.snapshot.as_ref(), result.config_revision).await?;
         Ok(result)
     }
@@ -207,12 +206,11 @@ impl ProxiesService for DefaultProxiesService {
             .map(|location| location.map(|value| value.normalized()).transpose())
             .transpose()
             .map_err(|_| AdminError::invalid("代理位置不合法"))?;
-        let dynamic = command.is_dynamic == Some(true);
         let result = self
             .store
             .update(command, context)
             .await
-            .map_err(|error| dynamic_mutation_error(error, dynamic))?;
+            .map_err(|error| map_store_error(error, "proxy"))?;
         publish_committed(self.snapshot.as_ref(), result.config_revision).await?;
         Ok(result)
     }
@@ -270,15 +268,4 @@ fn validate_name(value: &str) -> Result<String, AdminError> {
         return Err(AdminError::invalid("代理名称需要 1 至 100 个字符"));
     }
     Ok(value.to_owned())
-}
-
-fn dynamic_mutation_error(
-    error: crate::ports::store::AdminStoreError,
-    dynamic: bool,
-) -> AdminError {
-    if dynamic && error.kind() == AdminStoreErrorKind::Invalid {
-        AdminError::invalid("只能保存一个动态代理，且不能将已关联业务账号的代理设为动态代理")
-    } else {
-        map_store_error(error, "proxy")
-    }
 }
