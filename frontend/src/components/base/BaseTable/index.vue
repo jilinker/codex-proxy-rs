@@ -31,6 +31,7 @@ const props = withDefaults(defineProps<BaseTableProps<Row>>(), {
 })
 
 const emit = defineEmits<{
+  rowClick: [row: Row, index: number]
   sortChange: [sort: BaseTableSort | undefined]
 }>()
 const slots = useSlots()
@@ -128,7 +129,31 @@ function rowBackgroundClass(row: Row, index: number) {
 }
 
 function rowClass() {
-  return [bodyRowClass.value, 'hover:[&>td]:bg-(--cp-table-row-hover-bg)']
+  return [
+    bodyRowClass.value,
+    'hover:[&>td]:bg-(--cp-table-row-hover-bg)',
+    props.rowActionLabel
+      ? 'cursor-pointer outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-cp-primary'
+      : undefined,
+  ]
+}
+
+function activateRow(row: Row, index: number) {
+  emit('rowClick', row, index)
+}
+
+function handleRowClick(event: MouseEvent, row: Row, index: number) {
+  const target = event.target instanceof Element ? event.target : undefined
+  if (target?.closest('a, button, input, select, textarea, [role="button"]'))
+    return
+  activateRow(row, index)
+}
+
+function handleRowKeydown(event: KeyboardEvent, row: Row, index: number) {
+  if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key))
+    return
+  event.preventDefault()
+  activateRow(row, index)
 }
 
 function stickyClass(column: ResolvedTableColumn<Row>, header = false) {
@@ -259,7 +284,14 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
           </thead>
           <tbody>
             <template v-for="(row, index) in displayRows" :key="getRowKey(row, index)">
-              <tr :class="rowClass()" :aria-selected="isRowSelected(row, index) || undefined">
+              <tr
+                :class="rowClass()"
+                :tabindex="rowActionLabel ? 0 : undefined"
+                :aria-label="rowActionLabel?.(row, index)"
+                :aria-selected="isRowSelected(row, index) || undefined"
+                @click="rowActionLabel && handleRowClick($event, row, index)"
+                @keydown="rowActionLabel && handleRowKeydown($event, row, index)"
+              >
                 <td
                   v-for="(column, columnIndex) in computedColumns"
                   :key="column.key"

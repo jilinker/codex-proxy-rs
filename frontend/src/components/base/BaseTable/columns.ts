@@ -44,6 +44,7 @@ export interface BaseTableProps<Row extends TableRow> {
   columns: BaseTableColumn<Row>[]
   rows: Row[]
   rowKey?: string | ((row: Row, index: number) => string | number)
+  rowActionLabel?: (row: Row, index: number) => string
   selectedRowKeys?: Array<string | number>
   expandedRowKeys?: Array<string | number>
   density?: 'compact' | 'default'

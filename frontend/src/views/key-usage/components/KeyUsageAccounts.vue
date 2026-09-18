@@ -3,7 +3,6 @@ import type { AccountStatus } from '@/api/modules/accounts'
 import type { KeyUsageAccount, KeyUsageAccountScopeState } from '@/api/modules/key-usage'
 import type { BaseTablePagination as Pagination } from '@/components/base/BaseTable/pagination'
 import { computed } from 'vue'
-import BaseButton from '@/components/base/BaseButton.vue'
 import BaseCard from '@/components/base/BaseCard.vue'
 import BaseTablePagination from '@/components/base/BaseTable/BaseTablePagination.vue'
 import { defineTableColumns } from '@/components/base/BaseTable/columns'
@@ -20,7 +19,6 @@ const columns = defineTableColumns<KeyUsageAccount>([
   { key: 'status', label: '状态', kind: 'custom', size: 'lg' },
   { key: 'quota', label: '额度', kind: 'custom', size: '2xl' },
   { key: 'usage', label: '用量', kind: 'custom', size: '2xl' },
-  { key: 'actions', label: '操作', kind: 'custom', size: 'md', align: 'right' },
 ])
 const emptyText = computed(() => {
   if (props.error)
@@ -39,7 +37,16 @@ const emptyText = computed(() => {
       {{ error }}
     </p>
     <div class="flex h-120 min-h-0 overflow-hidden">
-      <BaseTable class="min-w-0 flex-1" :columns="columns" :rows="rows" :loading="loading" :empty-text="emptyText" scrollbar-always-visible>
+      <BaseTable
+        class="min-w-0 flex-1"
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        :empty-text="emptyText"
+        :row-action-label="row => `查看 ${row.identity || '账号'}详情`"
+        scrollbar-always-visible
+        @row-click="$emit('detail', $event.id)"
+      >
         <template #identity="{ row }">
           <span class="block truncate font-mono text-cp-sm font-heavy text-cp-text">{{ row.identity || '—' }}</span>
         </template>
@@ -69,11 +76,6 @@ const emptyText = computed(() => {
             <strong class="font-mono text-cp-sm font-heavy text-cp-text">{{ row.usage.totalTokensDisplay }} Tokens</strong>
             <span class="text-cp-xs font-emphasis text-cp-text-tertiary">{{ row.usage.requestCountDisplay }} 次 · 成功率 {{ row.usage.successRateDisplay }}</span>
           </div>
-        </template>
-        <template #actions="{ row }">
-          <BaseButton size="sm" variant="secondary" @click="$emit('detail', row.id)">
-            查看
-          </BaseButton>
         </template>
       </BaseTable>
     </div>

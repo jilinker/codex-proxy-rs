@@ -1,12 +1,26 @@
 <script setup lang="ts">
-import type { KeyUsageAccountDetail } from '@/api/modules/key-usage'
+import type { KeyUsageAccountDetail, KeyUsageAccountModelUsage } from '@/api/modules/key-usage'
 import BaseEmpty from '@/components/base/BaseEmpty.vue'
 import BaseModal from '@/components/base/BaseModal/index.vue'
 import BaseSkeleton from '@/components/base/BaseSkeleton.vue'
+import { defineTableColumns } from '@/components/base/BaseTable/columns'
+import BaseTable from '@/components/base/BaseTable/index.vue'
 import AccountPlanBadge from '@/views/accounts/components/AccountPlanBadge.vue'
+import { modelSuccessRateTextClass } from '@/views/accounts/constants'
 
 defineProps<{ account?: KeyUsageAccountDetail, loading: boolean, error: string }>()
 const open = defineModel<boolean>({ required: true })
+
+const modelUsageColumns = defineTableColumns<KeyUsageAccountModelUsage>([
+  { key: 'model', label: '模型', kind: 'text', size: 'lg' },
+  { key: 'requestCountDisplay', label: '调用', kind: 'numeric', size: 'xs' },
+  { key: 'successRateDisplay', label: '成功率', kind: 'numeric', size: 'sm' },
+  { key: 'inputTokensDisplay', label: '输入', kind: 'numeric', size: 'xs' },
+  { key: 'outputTokensDisplay', label: '输出', kind: 'numeric', size: 'xs' },
+  { key: 'cachedTokensDisplay', label: '缓存', kind: 'numeric', size: 'xs' },
+  { key: 'totalTokensDisplay', label: '总计', kind: 'numeric', size: 'xs' },
+  { key: 'lastUsedAtDisplay', label: '最近请求', kind: 'datetime', size: 'sm' },
+])
 </script>
 
 <template>
@@ -73,12 +87,14 @@ const open = defineModel<boolean>({ required: true })
         <h3 class="mt-0 mb-3 text-cp-lg font-heavy text-cp-text">
           模型用量
         </h3>
-        <div class="overflow-hidden rounded-cp-lg bg-cp-fill-alter">
-          <div v-for="model in account.usage.models" :key="model.model" class="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-cp-border-subtle px-4 py-3 last:border-b-0">
-            <code class="truncate font-mono text-cp-sm font-heavy text-cp-text">{{ model.model }}</code>
-            <span class="text-cp-sm font-emphasis text-cp-text-secondary">{{ model.requestCountDisplay }} 次</span>
-            <span class="font-mono text-cp-sm font-heavy text-cp-text">{{ model.totalTokensDisplay }}</span>
-          </div>
+        <div class="h-56 min-w-0">
+          <BaseTable :columns="modelUsageColumns" :rows="account.usage.models" row-key="model" density="compact">
+            <template #successRateDisplay="{ row }">
+              <span :class="modelSuccessRateTextClass(row.successRate)">
+                {{ row.successRateDisplay }}
+              </span>
+            </template>
+          </BaseTable>
         </div>
       </section>
     </div>
