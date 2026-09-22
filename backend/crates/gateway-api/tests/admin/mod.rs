@@ -103,6 +103,8 @@ pub(super) struct AdminTestFixture {
     pub dashboard_summary_range: Arc<Mutex<Option<TimeRange>>>,
     pub provider_error: Arc<Mutex<Option<ProviderAdminError>>>,
     pub account: Arc<Mutex<Option<AccountPageItem>>>,
+    pub account_usage: Arc<Mutex<Option<AccountUsage>>>,
+    pub account_quota: Arc<Mutex<Option<ProviderQuota>>>,
 }
 
 impl AdminTestFixture {
@@ -140,6 +142,8 @@ impl AdminTestFixture {
         let dashboard_summary_range = Arc::new(Mutex::new(None));
         let provider_error = Arc::new(Mutex::new(None));
         let account = Arc::new(Mutex::new(None));
+        let account_usage = Arc::new(Mutex::new(None));
+        let account_quota = Arc::new(Mutex::new(None));
         let unused = Arc::new(UnusedStore {
             observations: observations.clone(),
             usage_records: Arc::clone(&usage_records),
@@ -149,6 +153,7 @@ impl AdminTestFixture {
             dashboard_observation: Arc::clone(&dashboard_observation),
             dashboard_summary_range: Arc::clone(&dashboard_summary_range),
             account: Arc::clone(&account),
+            account_usage: Arc::clone(&account_usage),
         });
         let stores = AdminStorePorts::new(
             AdminAccountStorePorts::new(
@@ -164,8 +169,16 @@ impl AdminTestFixture {
             gateway_admin::ports::backup::BackupStorePorts::disabled(),
         );
         let providers: Vec<Arc<dyn ProviderAdmin>> = vec![
-            Arc::new(UnusedProvider::new("openai", Arc::clone(&provider_error))),
-            Arc::new(UnusedProvider::new("xai", Arc::clone(&provider_error))),
+            Arc::new(UnusedProvider::new(
+                "openai",
+                Arc::clone(&provider_error),
+                Arc::clone(&account_quota),
+            )),
+            Arc::new(UnusedProvider::new(
+                "xai",
+                Arc::clone(&provider_error),
+                Arc::clone(&account_quota),
+            )),
         ];
         let bundle = gateway_admin::initialize(
             AdminConfig {
@@ -202,6 +215,8 @@ impl AdminTestFixture {
             dashboard_summary_range,
             provider_error,
             account,
+            account_usage,
+            account_quota,
         }
     }
 
@@ -957,6 +972,7 @@ struct UnusedStore {
     dashboard_observation: Arc<Mutex<Option<DashboardObservation>>>,
     dashboard_summary_range: Arc<Mutex<Option<TimeRange>>>,
     account: Arc<Mutex<Option<AccountPageItem>>>,
+    account_usage: Arc<Mutex<Option<AccountUsage>>>,
 }
 
 struct UnusedClientKeyVerifier;
@@ -998,8 +1014,19 @@ impl AccountStore for UnusedStore {
 
     async fn load_account_usage_by_windows(
         &self,
-        _: &[AccountUsageWindowQuery],
+        queries: &[AccountUsageWindowQuery],
     ) -> AdminStoreResult<Vec<AccountUsageWindowResult>> {
+        if let Some(usage) = self.account_usage.lock().unwrap().as_ref() {
+            return Ok(queries
+                .iter()
+                .filter(|query| query.account_id == usage.account_id)
+                .map(|query| AccountUsageWindowResult {
+                    account_id: query.account_id.clone(),
+                    key: query.key.clone(),
+                    usage: usage.clone(),
+                })
+                .collect());
+        }
         if self.account.lock().expect("account").is_some() {
             return Ok(Vec::new());
         }
@@ -1256,13 +1283,19 @@ impl ObservabilityStore for UnusedStore {
 struct UnusedProvider {
     kind: ProviderKind,
     error: Arc<Mutex<Option<ProviderAdminError>>>,
+    quota: Arc<Mutex<Option<ProviderQuota>>>,
 }
 
 impl UnusedProvider {
-    fn new(kind: &str, error: Arc<Mutex<Option<ProviderAdminError>>>) -> Self {
+    fn new(
+        kind: &str,
+        error: Arc<Mutex<Option<ProviderAdminError>>>,
+        quota: Arc<Mutex<Option<ProviderQuota>>>,
+    ) -> Self {
         Self {
             kind: ProviderKind::new(kind).expect("provider kind"),
             error,
+            quota,
         }
     }
 }
@@ -1351,6 +1384,17 @@ impl ProviderAdmin for UnusedProvider {
             .expect("provider error")
             .clone()
             .unwrap_or_else(unsupported_provider))
+    }
+
+    async fn quota_snapshot(
+        &self,
+        _: &ProviderAccountId,
+    ) -> Result<ProviderQuota, ProviderAdminError> {
+        self.quota
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(unsupported_provider)
     }
 
     async fn quota(

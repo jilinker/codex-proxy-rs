@@ -380,9 +380,11 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 | `GET` | `/api/key-usage/accounts` | `currentPage?`、`pageSize?` | 当前 Key 已启用分组内账号的只读额度与 Token 用量摘要 |
 | `GET` | `/api/key-usage/accounts/detail` | `accountId` | 范围内单个账号的只读额度与按模型 Token 用量 |
 | `GET` | `/api/key-usage/config` | 无 | 当前 Key 的客户端配置凭据 |
-| `GET` | `/api/key-usage/version` | 无 | “关于”弹窗使用的当前版本号和提交号 |
+| `GET` | `/api/key-usage/version` | 无 | 当前版本号和提交号 |
 
 账号接口只使用服务端会话中的 Key 和 Key 配置的已启用账号分组确定范围，不接受 Key、分组或 Provider 范围参数。返回值不包含账号费用、凭据、上游原始错误和管理操作字段；额度读取使用已有持久化快照，不触发上游刷新。
+
+账号用量页默认收起详情，展开时独立请求详情接口。列表的 `usage.recentModel` 仅包含最近使用的模型名称和时间，用于匹配额度窗口。详情的 `localUsage` 只返回请求数、Token 数及其展示文本和请求时间桶，不含费用。账号统计按账号额度窗口聚合，包含该账号的全部请求，不限于当前 Key；这与使用统计页的当前 Key 口径不同。
 
 用量查询的起止时间使用 RFC3339，开始必须早于结束，一次最多 31 天。模型按完整名称匹配；
 不接受 Key ID、账号、Provider 等范围参数或其他未知字段。页码默认 1，每页默认 20，允许 1–100 条；

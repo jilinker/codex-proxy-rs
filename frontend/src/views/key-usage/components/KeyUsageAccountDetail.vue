@@ -1,102 +1,55 @@
 <script setup lang="ts">
-import type { KeyUsageAccountDetail, KeyUsageAccountModelUsage } from '@/api/modules/key-usage'
-import BaseEmpty from '@/components/base/BaseEmpty.vue'
-import BaseModal from '@/components/base/BaseModal/index.vue'
+import type { KeyUsageAccountDetail } from '@/api/modules/key-usage'
+import { shallowRef, watch } from 'vue'
+import { getKeyUsageAccountDetail } from '@/api/modules/key-usage'
+import BaseButton from '@/components/base/BaseButton.vue'
 import BaseSkeleton from '@/components/base/BaseSkeleton.vue'
-import { defineTableColumns } from '@/components/base/BaseTable/columns'
-import BaseTable from '@/components/base/BaseTable/index.vue'
-import AccountPlanBadge from '@/views/accounts/components/AccountPlanBadge.vue'
-import { modelSuccessRateTextClass } from '@/views/accounts/constants'
+import { useRequestState } from '@/composables/useRequestState'
+import AccountExpandedPanels from '@/views/accounts/components/AccountExpandedPanels.vue'
+import AccountQuotaDetails from '@/views/accounts/components/AccountQuotaPanel/Details.vue'
+import AccountUsageDetails from '@/views/accounts/components/AccountUsageDetails.vue'
 
-defineProps<{ account?: KeyUsageAccountDetail, loading: boolean, error: string }>()
-const open = defineModel<boolean>({ required: true })
+const props = defineProps<{ accountId: string }>()
+const account = shallowRef<KeyUsageAccountDetail>()
+const request = useRequestState()
+const { loading, error } = request
 
-const modelUsageColumns = defineTableColumns<KeyUsageAccountModelUsage>([
-  { key: 'model', label: '模型', kind: 'text', size: 'lg' },
-  { key: 'requestCountDisplay', label: '调用', kind: 'numeric', size: 'xs' },
-  { key: 'successRateDisplay', label: '成功率', kind: 'numeric', size: 'sm' },
-  { key: 'inputTokensDisplay', label: '输入', kind: 'numeric', size: 'xs' },
-  { key: 'outputTokensDisplay', label: '输出', kind: 'numeric', size: 'xs' },
-  { key: 'cachedTokensDisplay', label: '缓存', kind: 'numeric', size: 'xs' },
-  { key: 'totalTokensDisplay', label: '总计', kind: 'numeric', size: 'xs' },
-  { key: 'lastUsedAtDisplay', label: '最近请求', kind: 'datetime', size: 'sm' },
-])
+// 每个展开行独立请求 卸载后取消并丢弃旧响应
+async function load() {
+  const id = request.start()
+  account.value = undefined
+  try {
+    const result = await getKeyUsageAccountDetail(props.accountId, { signal: request.signal, silent: true })
+    if (request.isCurrent(id))
+      account.value = result
+  }
+  catch (cause) {
+    request.fail(id, cause)
+  }
+  finally {
+    request.finish(id)
+  }
+}
+
+watch(() => props.accountId, load, { immediate: true })
 </script>
 
 <template>
-  <BaseModal v-model="open" title="账号详情" description="只读查看当前 Key 可用账号的额度与用量" size="lg">
-    <div v-if="loading" class="grid gap-3">
-      <BaseSkeleton v-for="index in 5" :key="index" class="h-14 rounded-cp" />
-    </div>
-    <BaseEmpty v-else-if="error || !account" :title="error ? '账号详情加载失败' : '暂无账号详情'" :description="error || undefined" />
-    <div v-else class="grid gap-5">
-      <section class="flex flex-wrap items-center gap-3 rounded-cp-lg bg-cp-fill-alter p-4">
-        <div class="min-w-0 flex-1">
-          <p class="m-0 truncate font-mono text-cp-lg font-heavy text-cp-text">
-            {{ account.identity || '未提供账号标识' }}
-          </p>
-          <p class="mt-1 mb-0 text-cp-sm font-emphasis text-cp-text-secondary">
-            {{ account.provider }} · {{ account.authenticationKind === 'api_key' ? 'API Key' : 'OAuth' }}
-          </p>
-        </div>
-        <AccountPlanBadge :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" :authentication-kind="account.authenticationKind" />
-      </section>
-
-      <section>
-        <h3 class="mt-0 mb-3 text-cp-lg font-heavy text-cp-text">
-          额度窗口
-        </h3>
-        <div v-if="account.quota.windows.length" class="grid gap-2 md:grid-cols-2">
-          <article v-for="window in account.quota.windows" :key="window.key" class="rounded-cp-lg bg-cp-fill-alter p-4">
-            <div class="flex items-start justify-between gap-3">
-              <strong class="text-cp font-heavy text-cp-text">{{ window.labelDisplay }}</strong>
-              <span class="font-mono text-cp-sm font-heavy tabular-nums" :class="window.limitReached ? 'text-cp-error-text' : 'text-cp-text'">{{ window.usedPercentDisplay }}</span>
-            </div>
-            <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-cp-fill-tertiary">
-              <span class="block h-full rounded-full" :class="window.limitReached ? 'bg-cp-error' : 'bg-cp-primary'" :style="{ width: `${Math.min(Math.max(window.usedPercent ?? 0, 0), 100)}%` }" />
-            </div>
-            <div class="mt-2 flex justify-between gap-3 text-cp-xs font-emphasis text-cp-text-tertiary">
-              <span>{{ window.windowLabelDisplay }}</span>
-              <span>重置 {{ window.resetAtDisplay }}</span>
-            </div>
-          </article>
-        </div>
-        <BaseEmpty v-else title="暂无额度窗口" size="sm" />
-      </section>
-
-      <section>
-        <h3 class="mt-0 mb-3 text-cp-lg font-heavy text-cp-text">
-          用量概览
-        </h3>
-        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <div
-            v-for="item in [
-              ['请求数', account.usage.requestCountDisplay],
-              ['总 Token', account.usage.totalTokensDisplay],
-              ['成功率', account.usage.successRateDisplay],
-              ['最近使用', account.usage.lastUsedAtDisplay],
-            ]" :key="item[0]" class="rounded-cp-lg bg-cp-fill-alter p-3.5"
-          >
-            <span class="text-cp-xs font-bold text-cp-text-tertiary">{{ item[0] }}</span>
-            <strong class="mt-1 block font-mono text-cp-lg font-heavy text-cp-text">{{ item[1] }}</strong>
-          </div>
-        </div>
-      </section>
-
-      <section v-if="account.usage.models.length">
-        <h3 class="mt-0 mb-3 text-cp-lg font-heavy text-cp-text">
-          模型用量
-        </h3>
-        <div class="h-56 min-w-0">
-          <BaseTable :columns="modelUsageColumns" :rows="account.usage.models" row-key="model" density="compact">
-            <template #successRateDisplay="{ row }">
-              <span :class="modelSuccessRateTextClass(row.successRate)">
-                {{ row.successRateDisplay }}
-              </span>
-            </template>
-          </BaseTable>
-        </div>
-      </section>
-    </div>
-  </BaseModal>
+  <div v-if="loading" class="grid gap-3 p-4 lg:grid-cols-3" aria-label="加载账号详情" aria-busy="true">
+    <BaseSkeleton v-for="index in 3" :key="index" class="h-64 rounded-cp-lg" />
+  </div>
+  <div v-else-if="error" role="alert" class="flex items-center justify-center gap-3 p-6">
+    <span class="text-cp-sm text-cp-error-text">{{ error }}</span>
+    <BaseButton variant="secondary" @click="load">
+      重试
+    </BaseButton>
+  </div>
+  <AccountExpandedPanels v-else-if="account">
+    <template #quota>
+      <AccountQuotaDetails :account="account" />
+    </template>
+    <template #usage>
+      <AccountUsageDetails :usage="account.usage" />
+    </template>
+  </AccountExpandedPanels>
 </template>

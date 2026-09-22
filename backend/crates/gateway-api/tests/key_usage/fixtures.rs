@@ -266,3 +266,92 @@ fn error_record() -> OpsError {
         stable_sort_id: "private-sentinel".to_owned(),
     }
 }
+
+// 构造带敏感费用的窗口统计以检查嵌套响应白名单
+pub(super) fn bind_usage(fixture: &AdminTestFixture) {
+    use gateway_admin::model::{
+        accounts::{AccountCost, AccountModelUsage, AccountRequestBucket, AccountUsage},
+        provider_credentials::{
+            ProviderQuota, ProviderQuotaWindow, ProviderQuotaWindowRole, QuotaLocalUsageAttribution,
+        },
+    };
+    bind_primary_group(fixture);
+    fixture
+        .account
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .account
+        .authentication_kind = "oauth".to_owned();
+    let now = Utc::now();
+    let model = AccountModelUsage {
+        model: "latest-model".to_owned(),
+        request_count: 2,
+        success_count: 2,
+        input_tokens: Some(100),
+        output_tokens: Some(20),
+        cached_tokens: None,
+        cache_write_tokens: None,
+        reasoning_tokens: Some(10),
+        image_input_tokens: None,
+        image_output_tokens: None,
+        image_request_count: 0,
+        image_request_failed_count: 0,
+        total_tokens: Some(120),
+        cost_coverage: Default::default(),
+        costs: vec![AccountCost {
+            currency: "USD".to_owned(),
+            amount: "123.456".parse::<DecimalAmount>().unwrap(),
+        }],
+        last_used_at: now,
+    };
+    let mut older = model.clone();
+    older.model = "older-model".to_owned();
+    older.last_used_at = now - Duration::hours(1);
+    *fixture.account_usage.lock().unwrap() = Some(AccountUsage {
+        account_id: "acct_group_ready".to_owned(),
+        request_count: 4,
+        success_count: 4,
+        input_tokens: Some(200),
+        output_tokens: Some(40),
+        cached_tokens: None,
+        cache_write_tokens: None,
+        reasoning_tokens: Some(20),
+        image_input_tokens: None,
+        image_output_tokens: None,
+        image_request_count: 0,
+        image_request_failed_count: 0,
+        total_tokens: Some(240),
+        cost_coverage: Default::default(),
+        costs: model.costs.clone(),
+        last_used_at: Some(now),
+        request_buckets: vec![AccountRequestBucket {
+            bucket_start: now,
+            request_count: 4,
+        }],
+        models: vec![model, older],
+    });
+    *fixture.account_quota.lock().unwrap() = Some(ProviderQuota {
+        plan_type: Some("pro".to_owned()),
+        observed_at: Some(now),
+        refresh_token_expires_at: None,
+        limit_reached: false,
+        provider_data: None,
+        windows: vec![ProviderQuotaWindow {
+            key: "weekly".to_owned(),
+            group: "shortTerm".to_owned(),
+            label: "周额度".to_owned(),
+            limit_id: Some("codex".to_owned()),
+            limit_name: None,
+            role: Some(ProviderQuotaWindowRole::Secondary),
+            local_usage_attribution: QuotaLocalUsageAttribution::AccountWide,
+            window_seconds: Some(604800),
+            used_percent: Some(21.0),
+            reset_at: Some(now + Duration::days(1)),
+            limit_reached: false,
+            local_usage: None,
+            provider_data: None,
+        }],
+    });
+}

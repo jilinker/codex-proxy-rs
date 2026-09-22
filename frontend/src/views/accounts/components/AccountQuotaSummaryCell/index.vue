@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AccountRow } from '../../constants'
+import type { AccountSummaryPresentation } from '../accountPresentation'
 
 import { computed } from 'vue'
 import { groupedAccountQuotaWindows, visibleSummaryQuotaWindows } from '../../constants'
@@ -9,7 +9,7 @@ import AccountQuotaSummaryEntry from './Entry.vue'
 import { recentlyUsedQuotaEntry, representativeQuotaWindow } from './presenter'
 
 const props = defineProps<{
-  account: AccountRow
+  account: AccountSummaryPresentation
 }>()
 
 const quotaWindows = computed(() => props.account.quota.windows)
@@ -18,7 +18,7 @@ const summaryEntries = computed(() => groupedAccountQuotaWindows(visibleQuotaWin
 const hasUsage = computed(() => (props.account.usage.requestCount ?? 0) > 0)
 const recentUsageEntry = computed(() => recentlyUsedQuotaEntry(
   summaryEntries.value,
-  props.account.usage.models,
+  props.account.usage.models ?? (props.account.usage.recentModel ? [props.account.usage.recentModel] : []),
 ))
 const currentUsageWindow = computed(() => representativeQuotaWindow(recentUsageEntry.value))
 const currentUsageDisplay = computed(() => currentUsageWindow.value?.usedPercentDisplay ?? '—')

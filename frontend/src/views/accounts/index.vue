@@ -18,6 +18,7 @@ import AccountBatchEditModal from './components/AccountBatchEditModal.vue'
 import AccountConnectionTestModal from './components/AccountConnectionTestModal.vue'
 import AccountCreateModal from './components/AccountCreateModal/index.vue'
 import AccountEditModal from './components/AccountEditModal.vue'
+import AccountExpandedPanels from './components/AccountExpandedPanels.vue'
 import AccountFilters from './components/AccountFilters.vue'
 import AccountIdentityCell from './components/AccountIdentityCell.vue'
 import AccountImportTasks from './components/AccountImportTasks/index.vue'
@@ -333,18 +334,22 @@ const {
             </template>
 
             <template #expanded="{ row }">
-              <div class="grid items-stretch gap-3 p-4 lg:grid-cols-[1.05fr_2.45fr] xl:min-h-77">
-                <AccountQuotaPanel
-                  :account="row"
-                  :refreshing="refreshingQuotaAccountIds.has(row.id)"
-                  @account-updated="void replaceAccount($event)"
-                  @refresh-quota="handleRefreshQuota"
-                />
-                <AccountUsagePanel
-                  :account="row"
-                  @account-updated="void replaceAccount($event)"
-                />
-              </div>
+              <AccountExpandedPanels>
+                <template #quota>
+                  <AccountQuotaPanel
+                    :account="row"
+                    :refreshing="refreshingQuotaAccountIds.has(row.id)"
+                    @account-updated="void replaceAccount($event)"
+                    @refresh-quota="handleRefreshQuota"
+                  />
+                </template>
+                <template #usage>
+                  <AccountUsagePanel
+                    :account="row"
+                    @account-updated="void replaceAccount($event)"
+                  />
+                </template>
+              </AccountExpandedPanels>
             </template>
           </BaseTable>
           <BaseTablePagination

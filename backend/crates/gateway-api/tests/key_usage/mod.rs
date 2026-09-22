@@ -536,3 +536,109 @@ async fn namespace_errors_remain_json_and_uncacheable() {
         assert!(response_json(response).await["code"].is_number());
     }
 }
+
+#[tokio::test]
+async fn account_panels_expose_usage_without_nested_sensitive_fields() {
+    let fixture = fixtures::fixture().await;
+    fixtures::bind_usage(&fixture);
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let cookie = login(&app, "key").await;
+    let response = get_accounts(&app, "", &cookie).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let data = response_json(response).await["data"].clone();
+    let recent = &data["items"][0]["usage"]["recentModel"];
+    assert_eq!(recent["model"], "latest-model");
+    assert_eq!(recent.as_object().unwrap().len(), 2);
+    let response = get_accounts(&app, "/detail?accountId=acct_group_ready", &cookie).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let detail = response_json(response).await["data"].clone();
+    assert_eq!(detail["usage"]["models"].as_array().unwrap().len(), 2);
+    let local = &detail["quota"]["windows"][0]["localUsage"];
+    assert_eq!(local["requestCount"], 4);
+    assert_eq!(local["cachedTokens"], Value::Null);
+    assert_eq!(local["requestBuckets"][0]["requestCount"], 4);
+    let mut fields: Vec<_> = local
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    fields.sort_unstable();
+    assert_eq!(
+        fields,
+        vec![
+            "cachedTokens",
+            "cachedTokensDisplay",
+            "inputTokens",
+            "inputTokensDisplay",
+            "outputTokens",
+            "outputTokensDisplay",
+            "requestBuckets",
+            "requestCount",
+            "requestCountDisplay",
+            "totalTokens",
+            "totalTokensDisplay"
+        ]
+    );
+    for payload in [data, detail] {
+        let body = payload.to_string().to_lowercase();
+        for forbidden in [
+            "cost",
+            "billing",
+            "credential",
+            "private-sentinel",
+            "123.456",
+            "notes",
+            "groups",
+        ] {
+            assert!(
+                !body.contains(forbidden),
+                "unexpected field or value: {forbidden}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn account_details_recheck_scope_and_session_on_every_request() {
+    let fixture = fixtures::fixture().await;
+    fixtures::bind_usage(&fixture);
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let cookie = login(&app, "key").await;
+    let path = "/detail?accountId=acct_group_ready";
+    assert_eq!(
+        get_accounts(&app, path, &cookie).await.status(),
+        StatusCode::OK
+    );
+    fixture.client_key.lock().unwrap().as_mut().unwrap().groups[0].enabled = false;
+    assert_eq!(
+        get_accounts(&app, path, &cookie).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    let data = response_json(get_accounts(&app, "", &cookie).await).await;
+    assert_eq!(data["data"]["scopeState"], "no_enabled_groups");
+    fixture
+        .client_key
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .groups
+        .clear();
+    assert_eq!(
+        get_accounts(&app, path, &cookie).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    fixtures::bind_primary_group(&fixture);
+    assert_eq!(
+        get_accounts(&app, "/detail?accountId=unknown", &cookie)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    fixture.auth.enabled.store(false, Ordering::SeqCst);
+    assert_eq!(
+        get_accounts(&app, path, &cookie).await.status(),
+        StatusCode::UNAUTHORIZED
+    );
+}

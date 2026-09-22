@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Info, KeyRound, LogOut, Moon, RefreshCw, Sun, Terminal } from '@lucide/vue'
+import { KeyRound, LogOut, Moon, RefreshCw, Sun, Terminal } from '@lucide/vue'
 import { shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseButton from '@/components/base/BaseButton.vue'
@@ -10,7 +10,7 @@ import { useAuthStore } from '@/stores/modules/auth'
 import { useThemeStore } from '@/stores/modules/theme'
 
 defineProps<{ name?: string, prefix?: string, refreshing: boolean, configuring: boolean, showStatsControls: boolean }>()
-defineEmits<{ refresh: [], configure: [], openAbout: [] }>()
+defineEmits<{ refresh: [], configure: [] }>()
 const period = defineModel<string>('period', { required: true })
 const refreshInterval = defineModel<string>('refreshInterval', { required: true })
 const auth = useAuthStore()
@@ -45,9 +45,6 @@ async function logout() {
     </template>
     <template #actions>
       <div class="flex max-w-[calc(100vw-32px)] flex-wrap items-center justify-end gap-2">
-        <BaseIconButton label="关于" variant="filled" @click="$emit('openAbout')">
-          <Info class="size-4" />
-        </BaseIconButton>
         <BaseButton variant="secondary" :loading="configuring" @click="$emit('configure')">
           <Terminal class="size-4" />
           密钥配置

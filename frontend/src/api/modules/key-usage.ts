@@ -1,4 +1,5 @@
 import type { RequestOptions } from '../request'
+import type { AccountQuotaWindow, AccountStatus } from './accounts'
 import type { DashboardHealthTimeline } from './dashboard'
 import type { UsageBilling, UsageLatencyDetails, UsageTokenDetails } from './usage'
 import request from '../request'
@@ -89,14 +90,26 @@ export interface KeyUsageAccountQuotaWindow {
   group: string
   limitId: string | null
   limitName: string | null
-  role: string | null
+  role: AccountQuotaWindow['role']
   windowSeconds: number | null
   labelDisplay: string
   windowLabelDisplay: string
   usedPercent: number | null
   usedPercentDisplay: string
   limitReached: boolean
-  localUsage: Record<string, unknown> | null
+  localUsage: {
+    requestCount: number
+    requestCountDisplay: string
+    inputTokens: number | null
+    inputTokensDisplay: string
+    outputTokens: number | null
+    outputTokensDisplay: string
+    cachedTokens: number | null
+    cachedTokensDisplay: string
+    totalTokens: number | null
+    totalTokensDisplay: string
+    requestBuckets: { bucketStart: string, requestCount: number }[]
+  } | null
   resetAtDisplay: string
 }
 
@@ -108,6 +121,7 @@ export interface KeyUsageAccountQuota {
 }
 
 export interface KeyUsageAccountUsageSummary {
+  recentModel: { model: string, lastUsedAt: string } | null
   windowLabelDisplay: string
   requestCount: number | null
   requestCountDisplay: string
@@ -147,7 +161,7 @@ export interface KeyUsageAccount {
   authenticationKind: string
   planType: string | null
   planTypeDisplay: string
-  status: string
+  status: AccountStatus
   quota: KeyUsageAccountQuota
   usage: KeyUsageAccountUsageSummary
 }

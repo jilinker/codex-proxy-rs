@@ -14,7 +14,6 @@ use gateway_admin::model::{
     system::SystemVersion,
 };
 use serde::Serialize;
-use serde_json::{Value, json};
 
 use crate::admin::observability::{
     BillingView, HealthTimelineView, PageData, TokenDetailsView, billing_view,
@@ -320,13 +319,47 @@ struct AccountQuotaWindowView {
     used_percent: Option<f64>,
     used_percent_display: String,
     limit_reached: bool,
-    local_usage: Option<Value>,
+    local_usage: Option<AccountLocalUsageView>,
     reset_at_display: String,
+}
+
+/// 账号窗口用量白名单
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountLocalUsageView {
+    request_count: u64,
+    request_count_display: String,
+    input_tokens: Option<u64>,
+    input_tokens_display: String,
+    output_tokens: Option<u64>,
+    output_tokens_display: String,
+    cached_tokens: Option<u64>,
+    cached_tokens_display: String,
+    total_tokens: Option<u64>,
+    total_tokens_display: String,
+    request_buckets: Vec<AccountRequestBucketView>,
+}
+
+/// 时间线只公开聚合请求数
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountRequestBucketView {
+    bucket_start: DateTime<Utc>,
+    request_count: u64,
+}
+
+/// 摘要选择额度组所需的最近模型
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountRecentModelView {
+    model: String,
+    last_used_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AccountUsageSummaryView {
+    recent_model: Option<AccountRecentModelView>,
     window_label_display: String,
     request_count: Option<u64>,
     request_count_display: String,
@@ -500,19 +533,28 @@ fn quota_window_view(
     }
 }
 
-fn local_usage_view(usage: &AccountUsage) -> Value {
-    json!({
-        "requestCount": usage.request_count,
-        "requestCountDisplay": format_number(usage.request_count),
-        "inputTokens": usage.input_tokens,
-        "inputTokensDisplay": display_tokens(usage.input_tokens),
-        "outputTokens": usage.output_tokens,
-        "outputTokensDisplay": display_tokens(usage.output_tokens),
-        "cachedTokens": usage.cached_tokens,
-        "cachedTokensDisplay": display_tokens(usage.cached_tokens),
-        "totalTokens": usage.total_tokens,
-        "totalTokensDisplay": display_tokens(usage.total_tokens),
-    })
+// 避免复用管理员宽响应导致嵌套字段泄露
+fn local_usage_view(usage: &AccountUsage) -> AccountLocalUsageView {
+    AccountLocalUsageView {
+        request_count: usage.request_count,
+        request_count_display: format_number(usage.request_count),
+        input_tokens: usage.input_tokens,
+        input_tokens_display: display_tokens(usage.input_tokens),
+        output_tokens: usage.output_tokens,
+        output_tokens_display: display_tokens(usage.output_tokens),
+        cached_tokens: usage.cached_tokens,
+        cached_tokens_display: display_tokens(usage.cached_tokens),
+        total_tokens: usage.total_tokens,
+        total_tokens_display: display_tokens(usage.total_tokens),
+        request_buckets: usage
+            .request_buckets
+            .iter()
+            .map(|bucket| AccountRequestBucketView {
+                bucket_start: bucket.bucket_start,
+                request_count: bucket.request_count,
+            })
+            .collect(),
+    }
 }
 
 fn usage_label(value: &KeyUsageAccountSnapshot) -> &'static str {
@@ -539,6 +581,7 @@ fn usage_label(value: &KeyUsageAccountSnapshot) -> &'static str {
 fn usage_summary(usage: Option<&AccountUsage>, label: &str) -> AccountUsageSummaryView {
     let Some(usage) = usage else {
         return AccountUsageSummaryView {
+            recent_model: None,
             window_label_display: label.to_owned(),
             request_count: None,
             request_count_display: "—".to_owned(),
@@ -552,6 +595,14 @@ fn usage_summary(usage: Option<&AccountUsage>, label: &str) -> AccountUsageSumma
         };
     };
     AccountUsageSummaryView {
+        recent_model: usage
+            .models
+            .iter()
+            .max_by_key(|model| model.last_used_at)
+            .map(|model| AccountRecentModelView {
+                model: model.model.clone(),
+                last_used_at: model.last_used_at,
+            }),
         window_label_display: label.to_owned(),
         request_count: Some(usage.request_count),
         request_count_display: format_number(usage.request_count),

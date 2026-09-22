@@ -1,6 +1,6 @@
-import type { AccountQuotaWindow, AccountQuotaWindowEntry, AccountRow } from '../../constants'
+import type { AccountQuotaWindow, AccountQuotaWindowEntry } from '../../constants'
 
-type AccountModelUsage = AccountRow['usage']['models'][number]
+interface AccountModelUsage { model: string, lastUsedAt: string }
 
 /**
  * 根据账号最近一次模型请求选择对应额度组。
