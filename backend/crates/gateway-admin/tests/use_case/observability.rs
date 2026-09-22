@@ -372,6 +372,7 @@ async fn observability_services_should_calculate_usage_insights_and_diagnostic_s
         }],
     }]);
     store.replace_calculated_billing_facts(vec![UsageCalculatedBillingFact {
+        breakdown: None,
         bucket_start: quarter_hour_start(now),
         provider_kind: "openai".to_owned(),
         upstream_model_id: "gpt-5.5".to_owned(),
@@ -543,6 +544,7 @@ async fn usage_insights_should_reject_partial_costs_when_billing_stream_fails() 
     let range = observation_range(now);
     let store = Arc::new(FixtureObservabilityStore::new(range));
     store.replace_calculated_billing_facts(vec![UsageCalculatedBillingFact {
+        breakdown: None,
         bucket_start: quarter_hour_start(now),
         provider_kind: "openai".to_owned(),
         upstream_model_id: "gpt-5.5".to_owned(),
@@ -751,9 +753,27 @@ struct FixtureSettingsStore;
 
 #[async_trait]
 impl SettingsStore for FixtureSettingsStore {
+    async fn load_pricing(&self) -> AdminStoreResult<gateway_admin::model::pricing::StoredPricing> {
+        Ok(Default::default())
+    }
+    async fn sync_pricing(
+        &self,
+        _: gateway_admin::model::pricing::PricingSyncChanges,
+        _: &MutationContext,
+    ) -> AdminStoreResult<gateway_admin::model::Revision> {
+        panic!("unexpected pricing sync")
+    }
+    async fn update_pricing(
+        &self,
+        _: gateway_admin::model::pricing::UpdatePricing,
+        _: &MutationContext,
+    ) -> AdminStoreResult<gateway_admin::model::Revision> {
+        panic!("unexpected pricing update")
+    }
     async fn load_runtime_settings(&self) -> AdminStoreResult<RuntimeSettings> {
         Ok(RuntimeSettings {
-            disable_fast: false,
+            openai_client_profile: None,
+            xai_client_profile: None,
             request_location_enabled: false,
             request_location: Default::default(),
             config_revision: Revision::new(1).expect("revision"),
@@ -851,6 +871,7 @@ fn total_record(
     now: DateTime<Utc>,
 ) -> UsageListRecord {
     UsageListRecord {
+        client_api_key_name: Some("Production".to_owned()),
         id: id.to_owned(),
         endpoint: "/v1/responses".to_owned(),
         client_transport: "http_sse".to_owned(),
@@ -859,6 +880,7 @@ fn total_record(
         provider_account_ref: None,
         provider_account_name: None,
         provider_account_email: None,
+        provider_account_notes: None,
         provider_account_authentication_kind: None,
         upstream_model_id: Some("gpt-5.5".to_owned()),
         upstream_transport: None,

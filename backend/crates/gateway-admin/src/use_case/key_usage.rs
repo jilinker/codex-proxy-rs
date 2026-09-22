@@ -1,4 +1,4 @@
-//! Key 自助查询只从统一会话取得范围，复用现有观测和额度账本。
+//! Key 自助查询从统一会话或只读 Key 校验取得范围，复用现有观测和额度账本。
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -9,10 +9,11 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 
 use crate::{
-    AuthService,
+    AuthService, SystemService,
     model::{
         AdminError, AdminErrorKind,
         auth::SessionSubject,
+        client_keys::ClientKeySecret,
         key_usage::{
             KeyUsageAccountDetailQuery, KeyUsageAccountList, KeyUsageAccountListQuery,
             KeyUsageAccountQuota, KeyUsageAccountScopeState, KeyUsageAccountSnapshot,
@@ -22,18 +23,36 @@ use crate::{
         observability::{
             OpsErrorFilter, OpsErrorQuery, TimeRange, UsageFilter, UsageQuery, china_day_start,
         },
+        system::SystemVersion,
     },
     ports::{
         provider::{ProviderAdminErrorKind, ProviderAdminRegistry},
-        store::{AccountGroupStore, AccountStore, ClientKeyStore, ObservabilityStore},
+        store::{
+            AccountGroupStore, AccountStore, AdminStorePorts, ClientKeyStore, ObservabilityStore,
+        },
     },
 };
-use gateway_core::{account::ProviderAccountId, policy::ClientApiKeyId};
+use gateway_core::{
+    account::ProviderAccountId,
+    engine::{
+        budget::ClientBudgetStatus,
+        execution::{ClientAuthenticationError, ClientKeyVerifier},
+    },
+    policy::ClientApiKeyId,
+};
 
 use super::{map_store_error, observability::health_timeline_at};
 
 #[async_trait]
 pub trait KeyUsageService: Send + Sync {
+    /// 验证 Key 并只读查询当前额度，不记录 Key 使用或执行推理准入。
+    async fn budget(&self, plaintext: &str) -> Result<Option<ClientBudgetStatus>, AdminError>;
+
+    async fn version(&self, session_id: Option<&str>) -> Result<Option<SystemVersion>, AdminError>;
+
+    async fn config(&self, session_id: Option<&str>)
+    -> Result<Option<ClientKeySecret>, AdminError>;
+
     async fn overview(
         &self,
         session_id: Option<&str>,
@@ -61,29 +80,32 @@ pub trait KeyUsageService: Send + Sync {
 
 pub(crate) struct DefaultKeyUsageService {
     auth: Arc<dyn AuthService>,
+    verifier: Arc<dyn ClientKeyVerifier>,
     keys: Arc<dyn ClientKeyStore>,
     account_groups: Arc<dyn AccountGroupStore>,
     accounts: Arc<dyn AccountStore>,
     observations: Arc<dyn ObservabilityStore>,
     providers: ProviderAdminRegistry,
+    system: Arc<dyn SystemService>,
 }
 
 impl DefaultKeyUsageService {
     pub(crate) fn new(
         auth: Arc<dyn AuthService>,
-        keys: Arc<dyn ClientKeyStore>,
-        account_groups: Arc<dyn AccountGroupStore>,
-        accounts: Arc<dyn AccountStore>,
-        observations: Arc<dyn ObservabilityStore>,
+        verifier: Arc<dyn ClientKeyVerifier>,
+        store: &AdminStorePorts,
         providers: ProviderAdminRegistry,
+        system: Arc<dyn SystemService>,
     ) -> Self {
         Self {
             auth,
-            keys,
-            account_groups,
-            accounts,
-            observations,
+            verifier,
+            keys: store.client_keys(),
+            account_groups: store.account_groups(),
+            accounts: store.accounts(),
+            observations: store.observability(),
             providers,
+            system,
         }
     }
 
@@ -315,6 +337,46 @@ fn usage_filter(id: &ClientApiKeyId, model: Option<String>) -> UsageFilter {
 
 #[async_trait]
 impl KeyUsageService for DefaultKeyUsageService {
+    async fn budget(&self, plaintext: &str) -> Result<Option<ClientBudgetStatus>, AdminError> {
+        let id = match self.verifier.verify_client_key(plaintext) {
+            Ok(id) => id,
+            Err(ClientAuthenticationError::InvalidKey) => return Ok(None),
+            Err(ClientAuthenticationError::SnapshotUnavailable) => {
+                return Err(AdminError::new(
+                    AdminErrorKind::Unavailable,
+                    "密钥验证暂时不可用",
+                ));
+            }
+        };
+        self.keys
+            .get_client_key(&id)
+            .await
+            .map(|key| key.filter(|key| key.enabled).map(|key| key.budget))
+            .map_err(|error| map_store_error(error, "key usage budget"))
+    }
+
+    async fn version(&self, session_id: Option<&str>) -> Result<Option<SystemVersion>, AdminError> {
+        if self.key_id(session_id).await?.is_none() {
+            return Ok(None);
+        }
+        self.system.version().await.map(Some)
+    }
+
+    async fn config(
+        &self,
+        session_id: Option<&str>,
+    ) -> Result<Option<ClientKeySecret>, AdminError> {
+        let Some(id) = self.key_id(session_id).await? else {
+            return Ok(None);
+        };
+        // 明文只按服务端会话绑定的 Key 读取，禁用或删除后不再提供配置。
+        self.keys
+            .reveal_client_key(&id)
+            .await
+            .map(|secret| secret.filter(|secret| secret.record.enabled))
+            .map_err(|error| map_store_error(error, "key usage config"))
+    }
+
     async fn overview(
         &self,
         session_id: Option<&str>,

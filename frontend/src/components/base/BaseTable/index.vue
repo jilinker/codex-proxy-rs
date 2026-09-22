@@ -18,6 +18,7 @@ import {
   stickyStyle,
   tableStyle,
 } from './columns'
+import { useTableColumnMotion } from './useTableColumnMotion'
 
 const props = withDefaults(defineProps<BaseTableProps<Row>>(), {
   rowKey: 'id',
@@ -26,6 +27,7 @@ const props = withDefaults(defineProps<BaseTableProps<Row>>(), {
   density: 'default',
   loading: false,
   emptyText: '暂无数据',
+  showHeaderWhenEmpty: false,
   scrollbarAlwaysVisible: false,
   sort: undefined,
 })
@@ -52,10 +54,12 @@ const hasRows = computed(() => displayRows.value.length > 0)
 
 const scrollbarRef = useTemplateRef<InstanceType<typeof BaseScrollbar>>('scrollbar')
 const tableRef = useTemplateRef<HTMLTableElement>('table')
+useTableColumnMotion(tableRef, () => computedColumns.value.map(column => column.key))
 const horizontalScrolled = shallowRef(false)
 const horizontalCanScrollRight = shallowRef(false)
 
-function measureHorizontalScroll() {
+function updateScrollLayout() {
+  scrollbarRef.value?.update()
   const wrap = scrollbarRef.value?.wrapRef
   if (!wrap) {
     horizontalScrolled.value = false
@@ -78,12 +82,12 @@ function handleTableScroll(payload: { scrollTop: number, scrollLeft: number }) {
 
 onMounted(async () => {
   await nextTick()
-  measureHorizontalScroll()
+  updateScrollLayout()
 })
-useResizeObserver(() => [scrollbarRef.value?.wrapRef, tableRef.value].filter(Boolean), measureHorizontalScroll)
+useResizeObserver(() => [scrollbarRef.value?.wrapRef, tableRef.value].filter(Boolean), updateScrollLayout)
 watch([() => displayRows.value.length, () => props.columns], async () => {
   await nextTick()
-  measureHorizontalScroll()
+  updateScrollLayout()
 })
 
 const headerRowClass = computed(() => [
@@ -128,10 +132,12 @@ function rowBackgroundClass(row: Row, index: number) {
   return 'bg-(--cp-table-row-bg)'
 }
 
-function rowClass() {
+function rowClass(row: Row, index: number) {
   return [
     bodyRowClass.value,
-    'hover:[&>td]:bg-(--cp-table-row-hover-bg)',
+    isRowSelected(row, index)
+      ? 'hover:[&>td]:bg-(--cp-table-row-selected-hover-bg)'
+      : 'hover:[&>td]:bg-(--cp-table-row-hover-bg)',
     props.rowActionLabel
       ? 'cursor-pointer outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-cp-primary'
       : undefined,
@@ -210,9 +216,9 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
 
 <template>
   <div class="@container/table isolate flex h-full min-h-0 w-full max-w-full flex-col overflow-hidden">
-    <div v-loading="loading" class="relative flex min-h-0 max-w-full flex-1 overflow-hidden">
+    <div v-loading="loading && (hasRows || !showHeaderWhenEmpty)" class="relative flex min-h-0 max-w-full flex-1 overflow-hidden">
       <BaseScrollbar
-        v-if="hasRows"
+        v-if="hasRows || showHeaderWhenEmpty"
         ref="scrollbar"
         class="min-h-0 flex-1"
         :class="
@@ -246,7 +252,7 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
                 scope="col"
                 :aria-sort="columnAriaSort(column)"
               >
-                <div :class="cellContentClass(column)">
+                <div :class="cellContentClass(column)" :data-column-motion="column.sticky ? undefined : column.key">
                   <button
                     v-if="column.sortable"
                     type="button"
@@ -285,7 +291,7 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
           <tbody>
             <template v-for="(row, index) in displayRows" :key="getRowKey(row, index)">
               <tr
-                :class="rowClass()"
+                :class="rowClass(row, index)"
                 :tabindex="rowActionLabel ? 0 : undefined"
                 :aria-label="rowActionLabel?.(row, index)"
                 :aria-selected="isRowSelected(row, index) || undefined"
@@ -295,7 +301,7 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
                 <td
                   v-for="(column, columnIndex) in computedColumns"
                   :key="column.key"
-                  class="min-w-0"
+                  class="min-w-0 transition-[background-color] duration-150 ease-out motion-reduce:transition-none"
                   :class="[
                     column.paddingClass ?? cellPaddingClass,
                     bodyTextClass,
@@ -310,7 +316,7 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
                   ]"
                   :style="stickyStyle(column)"
                 >
-                  <div class="grid content-center" :class="bodyCellContentClass">
+                  <div class="grid content-center" :class="bodyCellContentClass" :data-column-motion="column.sticky ? undefined : column.key">
                     <div :class="cellContentClass(column)" :title="bodyCellTitle(column, row)">
                       <slot
                         :name="column.key"
@@ -338,8 +344,15 @@ function sortButtonLabel(column: ResolvedTableColumn<Row>) {
           </tbody>
         </table>
       </BaseScrollbar>
-      <div v-else class="grid min-h-0 flex-1 place-items-center overflow-hidden px-4">
-        <BaseEmpty v-if="!loading" :title="emptyText" surface="none" class="w-full max-w-80" />
+      <div
+        v-if="!hasRows"
+        v-loading="loading && showHeaderWhenEmpty"
+        class="grid min-h-0 flex-1 place-items-center overflow-hidden px-4"
+        :class="showHeaderWhenEmpty ? ['absolute inset-x-0 bottom-0', density === 'compact' ? 'top-8' : 'top-10'] : undefined"
+      >
+        <slot v-if="!loading" name="empty">
+          <BaseEmpty :title="emptyText" surface="none" class="w-full max-w-80" />
+        </slot>
       </div>
     </div>
   </div>

@@ -1,8 +1,9 @@
-//! 只投影当前 Key 可见的用量字段，不序列化账号、凭据、上游标识或诊断正文。
+//! 用量响应不含凭据；配置响应仅在显式读取时返回当前 Key 的名称与明文。
 
 use chrono::{DateTime, Utc};
 use gateway_admin::model::{
     accounts::{AccountModelUsage, AccountUsage},
+    client_keys::ClientKeySecret,
     key_usage::{
         KeyUsageAccountList, KeyUsageAccountQuota, KeyUsageAccountScopeState,
         KeyUsageAccountSnapshot, KeyUsageOverview, KeyUsageQuotaAvailability, KeyUsageRecords,
@@ -10,6 +11,7 @@ use gateway_admin::model::{
     observability::{
         CostCoverage, CurrencyCost, Granularity, OpsError, RequestMetrics, UsageListRecord,
     },
+    system::SystemVersion,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -19,6 +21,36 @@ use crate::admin::observability::{
     health_timeline_view, usage_list_token_details,
 };
 use crate::admin::presenter::{format_compact_number, format_number};
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct VersionView {
+    version: String,
+    git_sha: String,
+}
+
+pub(super) fn version(version: SystemVersion) -> VersionView {
+    // 密钥用户仅查看构建标识，不暴露部署环境、更新状态或内部诊断。
+    VersionView {
+        version: version.version,
+        git_sha: version.git_sha,
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ConfigView {
+    name: String,
+    plaintext_key: String,
+}
+
+pub(super) fn config(secret: ClientKeySecret) -> ConfigView {
+    let plaintext_key = secret.expose_for_response().to_owned();
+    ConfigView {
+        name: secret.record.name,
+        plaintext_key,
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

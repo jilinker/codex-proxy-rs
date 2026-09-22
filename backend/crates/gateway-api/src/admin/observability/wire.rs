@@ -56,6 +56,9 @@ pub struct CostCoverageView {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BillingView {
+    pub long_context_billing_applied: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<ImageBillingView>,
     pub input_amount_display: String,
     pub output_amount_display: String,
     pub cache_read_amount_display: String,
@@ -70,16 +73,27 @@ pub struct BillingView {
     pub multiplier_display: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageBillingView {
+    pub input_amount_display: String,
+    pub cache_read_amount_display: String,
+    pub input_price_display: String,
+    pub cache_read_price_display: String,
+}
+
 /// 使用记录表格的窄展示。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageListRecordView {
+    pub client_api_key_name: Option<String>,
     pub id: String,
     pub provider: Option<String>,
     pub authentication_kind: Option<String>,
     pub account_id: Option<String>,
     pub account_email: Option<String>,
     pub account_name: Option<String>,
+    pub account_notes: Option<String>,
     pub route: String,
     pub model: Option<String>,
     pub requested_model: Option<String>,
@@ -762,6 +776,7 @@ pub struct DiagnosticsView {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpsErrorView {
+    pub client_api_key_name: Option<String>,
     pub id: String,
     pub request_id: Option<String>,
     pub client_api_key_id: Option<String>,
