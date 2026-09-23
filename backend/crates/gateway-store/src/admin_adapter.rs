@@ -414,6 +414,9 @@ fn auth_audit_record(event: AdminAuditModel) -> AdminStoreResult<postgres::Admin
         gateway_admin::model::auth::AuditActorKind::AdminApiKey => {
             postgres::AdminAuditActorKind::AdminApiKey
         }
+        gateway_admin::model::auth::AuditActorKind::ClientKey => {
+            postgres::AdminAuditActorKind::ClientKey
+        }
         gateway_admin::model::auth::AuditActorKind::System => postgres::AdminAuditActorKind::System,
         gateway_admin::model::auth::AuditActorKind::Anonymous => {
             postgres::AdminAuditActorKind::Anonymous

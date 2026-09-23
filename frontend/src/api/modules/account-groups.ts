@@ -131,3 +131,20 @@ export function deleteAccountGroup(data: AccountGroupIdParam, options: RequestOp
     ...options,
   })
 }
+
+export function getGroupKeyAuthorizations(id: string, options: RequestOptions = {}) {
+  return request<string[]>({
+    url: '/api/admin/account-groups/key-authorizations',
+    method: 'GET',
+    params: { id },
+    ...options,
+  })
+}
+
+export function replaceGroupKeyAuthorizations(id: string, keyIds: string[]) {
+  return request<void>({
+    url: '/api/admin/account-groups/key-authorizations',
+    method: 'POST',
+    data: { id, keyIds },
+  })
+}

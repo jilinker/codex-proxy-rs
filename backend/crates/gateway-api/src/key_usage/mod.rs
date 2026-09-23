@@ -1,4 +1,4 @@
-//! 当前 Key 的单页用量 API；只暴露页面需要的只读字段。
+//! 当前 Key 的用量查询与授权账号操作 API
 
 use axum::{
     Router,
@@ -6,7 +6,7 @@ use axum::{
     http::{HeaderMap, HeaderValue, StatusCode, header},
     middleware,
     response::{IntoResponse, Response},
-    routing::{any, get},
+    routing::{any, get, post},
 };
 
 use crate::{
@@ -15,6 +15,7 @@ use crate::{
     session_cookie,
 };
 
+mod account_operations;
 mod presenter;
 mod query;
 
@@ -29,6 +30,7 @@ where
         .route("/api/key-usage/records", get(records::<S>))
         .route("/api/key-usage/accounts", get(accounts::<S>))
         .route("/api/key-usage/accounts/detail", get(account_detail::<S>))
+        .merge(account_operations::router::<S>())
         .route("/api/key-usage", any(not_found))
         .route("/api/key-usage/{*path}", any(not_found))
         .method_not_allowed_fallback(method_not_allowed)

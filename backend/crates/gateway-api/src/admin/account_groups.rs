@@ -232,6 +232,10 @@ where
 {
     Router::new()
         .route("/api/admin/account-groups", get(list::<S>))
+        .route(
+            "/api/admin/account-groups/key-authorizations",
+            get(key_authorizations::<S>).post(replace_key_authorizations::<S>),
+        )
         .route("/api/admin/account-groups/create", post(create::<S>))
         .route("/api/admin/account-groups/update", post(update::<S>))
         .route("/api/admin/account-groups/enable", post(enable::<S>))
@@ -422,4 +426,51 @@ fn map_wire_error(_: WireValidationError) -> AdminError {
 
 fn map_service_error(error: gateway_admin::model::AdminError) -> AdminError {
     map_admin_service_error(error)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct KeyAuthorizationsRequest {
+    id: String,
+    key_ids: Vec<String>,
+}
+
+async fn key_authorizations<S: SessionState + Send + Sync>(
+    _auth: AdminAuth,
+    State(state): State<S>,
+    AdminQuery(query): AdminQuery<AccountGroupIdRequest>,
+) -> Result<impl IntoResponse, AdminError> {
+    let ids = state
+        .admin_services()
+        .account_groups()
+        .key_authorizations(&group_id(query.id)?)
+        .await
+        .map_err(map_service_error)?;
+    Ok(AdminResponse::new(StatusCode::OK, AdminEnvelope::ok(ids)))
+}
+
+async fn replace_key_authorizations<S: SessionState + Send + Sync>(
+    auth: AdminAuth,
+    State(state): State<S>,
+    AdminJson(request): AdminJson<KeyAuthorizationsRequest>,
+) -> Result<impl IntoResponse, AdminError> {
+    let ids = request
+        .key_ids
+        .into_iter()
+        .map(|id| {
+            gateway_core::policy::ClientApiKeyId::new(id)
+                .map_err(|_| AdminError::bad_request("Key ID 不合法"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    state
+        .admin_services()
+        .account_groups()
+        .replace_key_authorizations(
+            &auth.context().mutation_context(),
+            group_id(request.id)?,
+            ids,
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(AdminResponse::new(StatusCode::OK, AdminEnvelope::ok(())))
 }

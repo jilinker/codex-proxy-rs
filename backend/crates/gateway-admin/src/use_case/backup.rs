@@ -321,11 +321,15 @@ impl DefaultBackupService {
         changed_fields: Vec<String>,
     ) -> Result<(), AdminError> {
         let actor_kind = match context.actor {
+            crate::model::MutationActor::ClientKey { .. } => AuditActorKind::ClientKey,
             crate::model::MutationActor::AdminSession { .. } => AuditActorKind::AdminSession,
             crate::model::MutationActor::AdminApiKey => AuditActorKind::AdminApiKey,
             crate::model::MutationActor::System => AuditActorKind::System,
         };
         let actor_ref = match &context.actor {
+            crate::model::MutationActor::ClientKey { client_key_id } => {
+                format!("key:{client_key_id}")
+            }
             crate::model::MutationActor::AdminSession { admin_user_id } => {
                 crate::model::auth::admin_session_actor_ref(admin_user_id)
             }

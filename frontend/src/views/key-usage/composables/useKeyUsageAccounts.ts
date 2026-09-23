@@ -1,5 +1,5 @@
 import type { Ref } from 'vue'
-import type { KeyUsageAccountScopeState } from '@/api/modules/key-usage'
+import type { KeyUsageAccount, KeyUsageAccountScopeState } from '@/api/modules/key-usage'
 import { shallowRef, watch } from 'vue'
 import { getKeyUsageAccounts } from '@/api/modules/key-usage'
 import { useStablePagedQuery } from '@/composables/useStablePagedQuery'
@@ -38,5 +38,9 @@ export function useKeyUsageAccounts(active: Ref<boolean>) {
     void accounts.reloadFromStart()
   }
 
-  return { accounts, scopeState, refresh, changePage, changePageSize }
+  function updateAccount(account: KeyUsageAccount) {
+    accounts.items.value = accounts.items.value.map(item => item.id === account.id ? account : item)
+  }
+
+  return { accounts, scopeState, refresh, changePage, changePageSize, updateAccount }
 }

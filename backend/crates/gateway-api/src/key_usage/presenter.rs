@@ -273,6 +273,9 @@ pub(super) struct AccountListView {
 struct AccountListItemView {
     id: String,
     identity: Option<String>,
+    name: Option<String>,
+    email: Option<String>,
+    capabilities: AccountCapabilitiesView,
     provider: String,
     authentication_kind: String,
     plan_type: Option<String>,
@@ -287,6 +290,9 @@ struct AccountListItemView {
 pub(super) struct AccountDetailView {
     id: String,
     identity: Option<String>,
+    name: Option<String>,
+    email: Option<String>,
+    capabilities: AccountCapabilitiesView,
     provider: String,
     authentication_kind: String,
     plan_type: Option<String>,
@@ -430,6 +436,9 @@ pub(super) fn account_detail(value: KeyUsageAccountSnapshot) -> AccountDetailVie
     AccountDetailView {
         id: account.id,
         identity: account.identity,
+        name: account.name,
+        email: account.email,
+        capabilities: account.capabilities,
         provider: account.provider,
         authentication_kind: account.authentication_kind,
         plan_type: account.plan_type,
@@ -455,7 +464,24 @@ fn account_list_item(value: KeyUsageAccountSnapshot) -> AccountListItemView {
         });
     AccountListItemView {
         id: account.id.clone(),
-        identity: mask_identity(identity),
+        identity: if value.authorized {
+            identity.map(str::to_owned)
+        } else {
+            mask_identity(identity)
+        },
+        name: value.authorized.then(|| account.name.clone()),
+        email: value.authorized.then(|| account.email.clone()).flatten(),
+        capabilities: AccountCapabilitiesView {
+            full_identity: value.authorized,
+            personal_info: value.authorized
+                && account.provider_kind.as_str() == "openai"
+                && account.authentication_kind == "oauth",
+            reset_credits: value.authorized
+                && account.provider_kind.as_str() == "openai"
+                && account.authentication_kind == "oauth",
+            refresh_quota: value.authorized && account.authentication_kind != "api_key",
+            quota_forecast: value.authorized && account.authentication_kind != "api_key",
+        },
         provider: account.provider_kind.to_string(),
         authentication_kind: account.authentication_kind.clone(),
         plan_type: account.plan_type.clone(),
@@ -716,4 +742,14 @@ fn display_percent(value: Option<f64>) -> String {
 
 fn display_tokens(value: Option<u64>) -> String {
     value.map_or_else(|| "—".to_owned(), format_compact_number)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AccountCapabilitiesView {
+    full_identity: bool,
+    personal_info: bool,
+    reset_credits: bool,
+    refresh_quota: bool,
+    quota_forecast: bool,
 }

@@ -1,18 +1,19 @@
 <script setup lang="ts">
-import type { AccountRow } from '../../constants'
+import type { AccountIdentityPresentation } from '../accountPresentation'
 import type { AccountProfileStatisticsResponse } from '@/api'
 import { UserRound } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 
-import { accountProfileAvatarUrl } from '@/api'
+import { useAccountOperations } from '../../composables/accountOperations'
 import { stablePresetVisualToneClass } from '../../utils/visualTone'
 import AccountPlanBadge from '../AccountPlanBadge.vue'
 
 const props = defineProps<{
-  account: AccountRow
+  account: AccountIdentityPresentation
   profile: AccountProfileStatisticsResponse | null
 }>()
 
+const operations = useAccountOperations()
 const imageFailed = shallowRef(false)
 const displayName = computed(
   () => props.profile?.displayName || props.profile?.username || props.account.email || props.account.name || 'Codex 用户',
@@ -25,7 +26,7 @@ const avatarToneClass = computed(() =>
 )
 const avatarUrl = computed(() => {
   const sourceUrl = props.profile?.imageUrl?.trim()
-  return sourceUrl ? accountProfileAvatarUrl(props.account.id, sourceUrl) : null
+  return sourceUrl ? operations.avatarUrl(props.account.id, sourceUrl) : null
 })
 watch(
   avatarUrl,

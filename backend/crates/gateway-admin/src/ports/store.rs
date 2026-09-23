@@ -318,6 +318,37 @@ pub trait ClientKeyStore: Send + Sync {
 /// Provider-neutral account group management transactions.
 #[async_trait]
 pub trait AccountGroupStore: Send + Sync {
+    async fn authorized_account_ids(
+        &self,
+        _key_id: &gateway_core::policy::ClientApiKeyId,
+    ) -> AdminStoreResult<Vec<String>> {
+        Ok(Vec::new())
+    }
+
+    async fn account_group_key_authorizations(
+        &self,
+        _id: &gateway_core::routing::AccountGroupId,
+    ) -> AdminStoreResult<Vec<String>> {
+        Err(AdminStoreError::new(
+            AdminStoreErrorKind::Unavailable,
+            "account group",
+            "authorizations unavailable",
+        ))
+    }
+
+    async fn replace_account_group_key_authorizations(
+        &self,
+        _id: gateway_core::routing::AccountGroupId,
+        _key_ids: Vec<gateway_core::policy::ClientApiKeyId>,
+        _context: &MutationContext,
+    ) -> AdminStoreResult<Revision> {
+        Err(AdminStoreError::new(
+            AdminStoreErrorKind::Unavailable,
+            "account group",
+            "authorizations unavailable",
+        ))
+    }
+
     async fn list_account_groups(
         &self,
         query: AccountGroupListQuery,

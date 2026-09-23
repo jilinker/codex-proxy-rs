@@ -19,3 +19,9 @@ create table account_group_key_authorizations (
 -- Key 查询反向定位授权分组 账号成员与启用状态在查询时读取当前事实
 create index account_group_key_authorizations_key_idx
   on account_group_key_authorizations (client_api_key_id, account_group_id);
+
+-- Key 发起的账号操作保留独立审计身份
+alter table admin_audit_events drop constraint admin_audit_events_actor_kind_ck;
+alter table admin_audit_events add constraint admin_audit_events_actor_kind_ck check (
+  actor_kind in ('admin_session', 'admin_api_key', 'system', 'anonymous', 'client_key')
+);

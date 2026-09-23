@@ -68,6 +68,11 @@ pub(crate) fn mutation_audit(
     changed_fields: Vec<String>,
 ) -> postgres::AdminAuditEvent {
     let (actor_kind, actor_admin_user_id, actor_ref) = match &context.actor {
+        MutationActor::ClientKey { client_key_id } => (
+            postgres::AdminAuditActorKind::ClientKey,
+            None,
+            format!("key:{client_key_id}"),
+        ),
         MutationActor::AdminSession { admin_user_id } => (
             postgres::AdminAuditActorKind::AdminSession,
             Some(admin_user_id.clone()),

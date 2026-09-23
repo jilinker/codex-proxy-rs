@@ -642,3 +642,254 @@ async fn account_details_recheck_scope_and_session_on_every_request() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+async fn post_account_action(app: &Router, path: &str, cookie: &str, body: Value) -> Response {
+    let mut request = json_request(Method::POST, path, body);
+    request
+        .headers_mut()
+        .insert(header::COOKIE, cookie.parse().unwrap());
+    app.clone().oneshot(request).await.unwrap()
+}
+
+#[tokio::test]
+async fn group_grants_are_admin_only_and_independent_from_routing() {
+    let fixture = fixtures::fixture().await;
+    fixtures::bind_primary_group(&fixture);
+    fixture
+        .client_key
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .groups
+        .clear();
+    fixture
+        .account
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .account
+        .name = "Full account name".to_owned();
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let admin = login(&app, "admin").await;
+    let key = login(&app, "key").await;
+    let path = "/api/admin/account-groups/key-authorizations";
+    let body = json!({"id":"grp_11111111111111111111111111111111", "keyIds":["key-42"]});
+    assert_eq!(
+        post_account_action(&app, path, &key, body.clone())
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        post_account_action(&app, path, &admin, body).await.status(),
+        StatusCode::OK
+    );
+    let data = response_json(get_accounts(&app, "", &key).await).await;
+    assert_eq!(data["data"]["scopeState"], "available");
+    let account = &data["data"]["items"][0];
+    assert_eq!(account["identity"], "visible@example.com");
+    assert_eq!(account["name"], "Full account name");
+    assert_eq!(account["capabilities"]["fullIdentity"], true);
+    assert!(!data.to_string().contains("private-sentinel"));
+    assert!(
+        fixture
+            .client_key
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .groups
+            .is_empty()
+    );
+    let revoke = json!({"id":"grp_11111111111111111111111111111111", "keyIds":[]});
+    assert_eq!(
+        post_account_action(&app, path, &admin, revoke)
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        get_accounts(&app, "/detail?accountId=acct_group_ready", &key)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn account_operations_require_explicit_grants_even_for_routing_members() {
+    let fixture = fixtures::fixture().await;
+    fixtures::bind_primary_group(&fixture);
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let key = login(&app, "key").await;
+    let admin = login(&app, "admin").await;
+    for suffix in [
+        "personal-info",
+        "profile-avatar",
+        "quota-forecast",
+        "reset-credits",
+    ] {
+        let path = format!("/{suffix}?accountId=acct_group_ready");
+        assert_eq!(
+            get_accounts(&app, &path, &key).await.status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            get_accounts(&app, &path, &admin).await.status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            get_accounts(&app, &path, "").await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    for (suffix, body) in [
+        ("quota/refresh", json!({"accountId":"acct_group_ready"})),
+        (
+            "reset-credits",
+            json!({"accountId":"acct_group_ready", "redeemRequestId":"3f7a6791-1b02-4a76-94c2-5b5b41e99d87"}),
+        ),
+    ] {
+        let path = format!("/api/key-usage/accounts/{suffix}");
+        assert_eq!(
+            post_account_action(&app, &path, &key, body.clone())
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            post_account_action(&app, &path, &admin, body.clone())
+                .await
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            post_account_action(&app, &path, "", body).await.status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+}
+
+#[tokio::test]
+async fn authorized_operations_use_account_services_and_key_audit_identity() {
+    let fixture = fixtures::fixture().await;
+    fixtures::bind_usage(&fixture);
+    fixture
+        .account
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .account
+        .name = "Authorized account".to_owned();
+    // 空窗口仍返回可解释的预测状态 不要求真实上游调用
+    fixture
+        .account_quota
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .windows
+        .clear();
+    let app = crate::openai::api_router_with_admin(fixture.services.clone());
+    let admin = login(&app, "admin").await;
+    let key = login(&app, "key").await;
+    let grants = "/api/admin/account-groups/key-authorizations";
+    assert_eq!(
+        post_account_action(
+            &app,
+            grants,
+            &admin,
+            json!({"id":"grp_11111111111111111111111111111111", "keyIds":["key-42"]})
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    for suffix in [
+        "personal-info",
+        "profile-avatar",
+        "quota-forecast",
+        "reset-credits",
+    ] {
+        let response =
+            get_accounts(&app, &format!("/{suffix}?accountId=acct_group_ready"), &key).await;
+        assert_eq!(response.status(), StatusCode::OK, "{suffix}");
+        assert_eq!(
+            get_accounts(&app, &format!("/{suffix}?accountId=acct_other"), &key)
+                .await
+                .status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+    let refresh = post_account_action(
+        &app,
+        "/api/key-usage/accounts/quota/refresh",
+        &key,
+        json!({"accountId":"acct_group_ready"}),
+    )
+    .await;
+    assert_eq!(refresh.status(), StatusCode::OK);
+    let data = response_json(refresh).await;
+    assert_eq!(data["data"]["capabilities"]["resetCredits"], true);
+    assert!(!data.to_string().contains("private-sentinel"));
+    let body = json!({"accountId":"acct_group_ready", "redeemRequestId":"3f7a6791-1b02-4a76-94c2-5b5b41e99d87"});
+    let response = post_account_action(
+        &app,
+        "/api/key-usage/accounts/reset-credits",
+        &key,
+        body.clone(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response_json(response).await["data"]["code"], "reset");
+    {
+        let audits = fixture.auth.audits.lock().unwrap();
+        let event = audits
+            .iter()
+            .find(|event| event.action == "key_account.reset_credit.requested")
+            .unwrap();
+        assert_eq!(
+            event.actor_kind,
+            gateway_admin::model::auth::AuditActorKind::ClientKey
+        );
+        assert_eq!(event.actor_ref, "key:key-42");
+        assert!(event.actor_admin_user_id.is_none());
+    }
+    fixture.auth.fail_audit.store(true, Ordering::SeqCst);
+    assert_eq!(
+        post_account_action(
+            &app,
+            "/api/key-usage/accounts/reset-credits",
+            &key,
+            body.clone()
+        )
+        .await
+        .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    fixture.auth.fail_audit.store(false, Ordering::SeqCst);
+    assert_eq!(
+        post_account_action(
+            &app,
+            grants,
+            &admin,
+            json!({"id":"grp_11111111111111111111111111111111", "keyIds":[]})
+        )
+        .await
+        .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        post_account_action(&app, "/api/key-usage/accounts/reset-credits", &key, body)
+            .await
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    let detail =
+        response_json(get_accounts(&app, "/detail?accountId=acct_group_ready", &key).await).await;
+    assert_eq!(detail["data"]["identity"], "vi***com");
+    assert_eq!(detail["data"]["capabilities"]["fullIdentity"], false);
+}

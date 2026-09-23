@@ -1,7 +1,8 @@
 import type { RequestOptions } from '../request'
-import type { AccountQuotaWindow, AccountStatus } from './accounts'
+import type { AccountPersonalInfoResponse, AccountQuotaForecastResponse, AccountQuotaWindow, AccountResetCreditResultResponse, AccountResetCreditsResponse, AccountStatus } from './accounts'
 import type { DashboardHealthTimeline } from './dashboard'
 import type { UsageBilling, UsageLatencyDetails, UsageTokenDetails } from './usage'
+import { API_BASE_URL } from '../constants'
 import request from '../request'
 
 export interface KeyUsageConfig {
@@ -155,6 +156,15 @@ export interface KeyUsageAccountModelUsage {
 }
 
 export interface KeyUsageAccount {
+  name: string | null
+  email: string | null
+  capabilities: {
+    fullIdentity: boolean
+    personalInfo: boolean
+    resetCredits: boolean
+    refreshQuota: boolean
+    quotaForecast: boolean
+  }
   id: string
   identity: string | null
   provider: string
@@ -254,4 +264,51 @@ export function getKeyUsageAccountDetail(accountId: string, options: RequestOpti
     params: { accountId },
     ...options,
   })
+}
+
+export function getKeyAccountPersonalInfo(params: { accountId: string }, options: RequestOptions = {}) {
+  return request<AccountPersonalInfoResponse>({
+    url: '/api/key-usage/accounts/personal-info',
+    method: 'GET',
+    params,
+    ...options,
+  })
+}
+
+export function getKeyAccountForecast(params: { accountId: string }, options: RequestOptions = {}) {
+  return request<AccountQuotaForecastResponse>({
+    url: '/api/key-usage/accounts/quota-forecast',
+    method: 'GET',
+    params,
+    ...options,
+  })
+}
+
+export function getKeyAccountResetCredits(params: { accountId: string }, options: RequestOptions = {}) {
+  return request<AccountResetCreditsResponse>({
+    url: '/api/key-usage/accounts/reset-credits',
+    method: 'GET',
+    params,
+    ...options,
+  })
+}
+
+export function consumeKeyAccountResetCredit(data: { accountId: string, creditId?: string, redeemRequestId: string }, options: RequestOptions = {}) {
+  return request<AccountResetCreditResultResponse>({
+    url: '/api/key-usage/accounts/reset-credits',
+    method: 'POST',
+    data,
+    ...options,
+  })
+}
+export function refreshKeyAccountQuota(accountId: string, options: RequestOptions = {}) {
+  return request<KeyUsageAccountDetail>({
+    url: '/api/key-usage/accounts/quota/refresh',
+    method: 'POST',
+    data: { accountId },
+    ...options,
+  })
+}
+export function keyAccountAvatarUrl(accountId: string) {
+  return `${API_BASE_URL}/api/key-usage/accounts/profile-avatar?${new URLSearchParams({ accountId })}`
 }

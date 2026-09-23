@@ -386,7 +386,20 @@ OpenAI 选号阶段确认本次可选账号全部额度耗尽时，HTTP 返回 `
 | `GET` | `/api/key-usage/config` | 无 | 当前 Key 的客户端配置凭据 |
 | `GET` | `/api/key-usage/version` | 无 | 当前版本号和提交号 |
 
-账号接口只使用服务端会话中的 Key 和 Key 配置的已启用账号分组确定范围，不接受 Key、分组或 Provider 范围参数。返回值不包含账号费用、凭据、上游原始错误和管理操作字段；额度读取使用已有持久化快照，不触发上游刷新。
+账号范围为当前会话 Key 的已启用路由分组与已启用授权分组的并集，按账号去重，不接受调用方提供的 Key、分组或 Provider 范围。仅路由绑定的账号保持身份脱敏；管理员显式授权的分组成员返回完整 `identity`、`name`、`email`，包括停用或异常账号。账号列表与详情仍不返回费用、凭据、代理配置、备注、上游原始错误和账号管理字段。
+
+列表和详情均返回 `capabilities`：`fullIdentity`、`personalInfo`、`resetCredits`、`refreshQuota`、`quotaForecast`。后四项同时按 Provider 和认证方式限制展示，个人信息及重置卡当前仅支持 OpenAI OAuth。前端标记不构成授权凭据；独立 Key 操作接口每次重新校验 Key 启用状态、分组启用状态及成员授权，越权账号返回 404。撤销授权、停用分组或移除成员影响后续请求。多组中任一启用授权仍有效。
+
+| 方法 | 路由 | 参数 | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/api/key-usage/accounts/personal-info` | `accountId` | 授权账号的个人资料与订阅安全字段 |
+| `GET` | `/api/key-usage/accounts/profile-avatar` | `accountId`、`version?` | 受保护的同源头像 |
+| `GET` | `/api/key-usage/accounts/quota-forecast` | `accountId` | 授权账号额度预测 沿用账号预测响应合同 |
+| `POST` | `/api/key-usage/accounts/quota/refresh` | `{ accountId }` | 刷新上游额度 返回 Key 账号详情 |
+| `GET` | `/api/key-usage/accounts/reset-credits` | `accountId` | 可用额度重置卡 |
+| `POST` | `/api/key-usage/accounts/reset-credits` | `{ accountId, creditId?, redeemRequestId }` | 消费重置卡 UUID v4 幂等键在结果不确定时必须复用 |
+
+上述接口仅接受 Key 会话，不接受管理员会话。列表和详情读取持久化额度快照；刷新及重置动作复用账号业务服务，响应统一禁止缓存。
 
 账号用量页默认收起详情，展开时独立请求详情接口。列表的 `usage.recentModel` 仅包含最近使用的模型名称和时间，用于匹配额度窗口。详情的 `localUsage` 只返回请求数、Token 数及其展示文本和请求时间桶，不含费用。账号统计按账号额度窗口聚合，包含该账号的全部请求，不限于当前 Key；这与使用统计页的当前 Key 口径不同。
 
@@ -935,7 +948,9 @@ HTTP 请求头及新建 WS 的握手提示按当时的最终出站档位构造�
 | `POST` | `/api/admin/account-groups/update` | `{ id, name, description, color, disableFast? }` | 更新名称、描述、颜色和 Fast 限制 |
 | `POST` | `/api/admin/account-groups/enable` | `{ id }` | 启用 |
 | `POST` | `/api/admin/account-groups/disable` | `{ id }` | 禁用；已绑定 Key 保持受限，不回退到全部账号 |
-| `POST` | `/api/admin/account-groups/delete` | `{ id }` | 删除未被 Client Key 引用的组 |
+| `POST` | `/api/admin/account-groups/delete` | `{ id }` | 删除未被 Client Key 路由引用的组 授权关系随组删除 |
+| `GET` | `/api/admin/account-groups/key-authorizations` | `id` | 返回该组已授权 Key ID 数组 仅管理员可查询 |
+| `POST` | `/api/admin/account-groups/key-authorizations` | `{ id, keyIds }` | 原子替换该组授权 Key 支持空数组撤销全部 拒绝重复或不存在的 Key 不改变路由绑定 |
 
 列表数据为 `{ items, page, configRevision }`，其中 item 返回 `memberCount`、按 Provider 聚合的
 `providerCounts` 和 `clientKeyCount`。查询分组成员使用账号列表的 `groupId` 筛选，

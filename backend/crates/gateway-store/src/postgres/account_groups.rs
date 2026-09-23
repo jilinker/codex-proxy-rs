@@ -106,6 +106,99 @@ impl PgAccountGroupRepository {
 
 #[async_trait]
 impl AccountGroupStore for PgAccountGroupRepository {
+    async fn authorized_account_ids(
+        &self,
+        key_id: &gateway_core::policy::ClientApiKeyId,
+    ) -> AdminStoreResult<Vec<String>> {
+        sqlx::query_scalar(
+            "select distinct m.provider_account_id
+             from account_group_key_authorizations a
+             join account_groups g on g.id = a.account_group_id
+             join account_group_accounts m on m.account_group_id = g.id
+             join client_api_keys k on k.id = a.client_api_key_id
+             where k.id = $1 and k.enabled and g.enabled
+             order by m.provider_account_id",
+        )
+        .bind(key_id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| admin_store_error(ENTITY, unavailable("load authorized accounts")))
+    }
+
+    async fn account_group_key_authorizations(
+        &self,
+        id: &AccountGroupId,
+    ) -> AdminStoreResult<Vec<String>> {
+        self.required_record(id).await?;
+        sqlx::query_scalar(
+            "select client_api_key_id from account_group_key_authorizations
+             where account_group_id = $1 order by client_api_key_id",
+        )
+        .bind(id.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|_| admin_store_error(ENTITY, unavailable("load group authorizations")))
+    }
+
+    async fn replace_account_group_key_authorizations(
+        &self,
+        id: AccountGroupId,
+        key_ids: Vec<gateway_core::policy::ClientApiKeyId>,
+        context: &MutationContext,
+    ) -> AdminStoreResult<gateway_admin::model::Revision> {
+        let audit = mutation_audit(
+            context,
+            "account_group.authorize_keys",
+            ENTITY,
+            id.as_str(),
+            vec!["authorized_keys".to_owned()],
+        );
+        self.mutate(audit, move |transaction| {
+            Box::pin(async move {
+                let exists: Option<String> =
+                    sqlx::query_scalar("select id from account_groups where id = $1 for update")
+                        .bind(id.as_str())
+                        .fetch_optional(&mut **transaction)
+                        .await
+                        .map_err(|_| unavailable("lock authorization group"))?;
+                if exists.is_none() {
+                    return Err(not_found_store(id.as_str()));
+                }
+                let ids: Vec<_> = key_ids.iter().map(|id| id.as_str().to_owned()).collect();
+                // 与替换事务共享外键锁 避免校验后 Key 被并发删除
+                let found: Vec<String> = sqlx::query_scalar(
+                    "select id from client_api_keys where id = any($1::text[]) for key share",
+                )
+                .bind(&ids)
+                .fetch_all(&mut **transaction)
+                .await
+                .map_err(|_| unavailable("validate authorization keys"))?;
+                if found.len() != ids.len() {
+                    return Err(invalid("unknown or duplicate authorization keys"));
+                }
+                sqlx::query(
+                    "delete from account_group_key_authorizations where account_group_id = $1",
+                )
+                .bind(id.as_str())
+                .execute(&mut **transaction)
+                .await
+                .map_err(|_| unavailable("replace group authorizations"))?;
+                sqlx::query(
+                    "insert into account_group_key_authorizations
+                     (account_group_id, client_api_key_id, created_at)
+                     select $1, unnest($2::text[]), now()",
+                )
+                .bind(id.as_str())
+                .bind(ids)
+                .execute(&mut **transaction)
+                .await
+                .map_err(|_| unavailable("save group authorizations"))?;
+                Ok(())
+            })
+        })
+        .await
+    }
+
     async fn list_account_groups(
         &self,
         query: AccountGroupListQuery,

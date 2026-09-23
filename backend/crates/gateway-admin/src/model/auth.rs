@@ -140,6 +140,7 @@ pub struct AuthSession {
 /// 安全审计事件类型。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditActorKind {
+    ClientKey,
     AdminSession,
     AdminApiKey,
     System,

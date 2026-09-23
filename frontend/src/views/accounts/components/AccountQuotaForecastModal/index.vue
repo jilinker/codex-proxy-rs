@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AccountRow } from '../../constants'
+import type { AccountIdentityPresentation } from '../accountPresentation'
 import type { Account } from '@/api'
 import { ChartNoAxesCombined, CircleAlert, RefreshCw } from '@lucide/vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
@@ -16,7 +16,7 @@ import AccountIdentityCell from '../AccountIdentityCell.vue'
 import ForecastCapacity from './ForecastCapacity.vue'
 import ForecastSkeleton from './Skeleton.vue'
 
-const props = defineProps<{ account: AccountRow }>()
+const props = defineProps<{ account: AccountIdentityPresentation }>()
 const emit = defineEmits<{ accountUpdated: [account: Account] }>()
 const open = defineModel<boolean>({ default: false })
 const period = ref('weekly')

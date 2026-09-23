@@ -63,7 +63,7 @@ const { showConfig, configKey, configuring, apiBaseUrl, openConfig, copyConfig }
         </template>
         <KeyUsageSkeleton v-else-if="statsActive && overviewLoading" />
         <KeyUsageRecords v-if="statsActive" v-model:kind="kind" :rows="items" :pagination="{ currentPage, pageSize, total }" :loading="recordsLoading" :error="recordsError" :stale="recordsStale" @page-change="changePage" @page-size-change="changePageSize" />
-        <KeyUsageAccounts v-else :rows="accountItems" :pagination="{ currentPage: accountPage, pageSize: accountPageSize, total: accountTotal }" :loading="accountsLoading" :error="accountsError" :scope-state="accountUsage.scopeState.value" @page-change="accountUsage.changePage" @page-size-change="accountUsage.changePageSize" />
+        <KeyUsageAccounts v-else :rows="accountItems" :pagination="{ currentPage: accountPage, pageSize: accountPageSize, total: accountTotal }" :loading="accountsLoading" :error="accountsError" :scope-state="accountUsage.scopeState.value" @updated="accountUsage.updateAccount" @access-changed="accountUsage.refresh" @page-change="accountUsage.changePage" @page-size-change="accountUsage.changePageSize" />
       </div>
     </BaseScrollbar>
     <ApiKeyConfigModal v-model="showConfig" title="密钥配置" :api-key="configKey" :api-base-url="apiBaseUrl" @copy="copyConfig" />

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AccountGroup } from '@/api'
+import { shallowRef } from 'vue'
 import BaseCard from '@/components/base/BaseCard.vue'
 import BaseCheckbox from '@/components/base/BaseCheckbox.vue'
 import BaseConfirmModal from '@/components/base/BaseConfirmModal.vue'
@@ -9,9 +11,12 @@ import { usePageSelection } from '@/composables/usePageSelection'
 import AccountGroupActions from './components/AccountGroupActions.vue'
 import AccountGroupFilters from './components/AccountGroupFilters.vue'
 import AccountGroupFormModal from './components/AccountGroupFormModal.vue'
+import AccountGroupKeyAuthorizations from './components/AccountGroupKeyAuthorizations.vue'
 import AccountGroupMetricsCell from './components/AccountGroupMetricsCell.vue'
 import { useAccountGroups } from './composables/useAccountGroups'
 import { accountGroupColumns } from './constants'
+
+const authorizationGroup = shallowRef<AccountGroup | null>(null)
 
 const {
   groups,
@@ -154,6 +159,7 @@ const { allSelected, indeterminate, selectedRowKeys, toggleSelection, toggleAll 
                 :deleting="deleting"
                 :updating-status="updatingStatusGroupIds.has(row.id)"
                 @edit="openEdit"
+                @authorize="authorizationGroup = $event"
                 @toggle="requestToggle"
                 @delete="requestDelete"
               />
@@ -169,6 +175,7 @@ const { allSelected, indeterminate, selectedRowKeys, toggleSelection, toggleAll 
       </template>
     </BaseCard>
 
+    <AccountGroupKeyAuthorizations :group="authorizationGroup" @close="authorizationGroup = null" />
     <AccountGroupFormModal
       v-model="showFormModal"
       v-model:form="form"

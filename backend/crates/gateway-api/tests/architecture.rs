@@ -57,6 +57,7 @@ fn source_tree_should_match_frozen_machine_manifest() {
         "src/admin/wire.rs",
         "src/auth.rs",
         "src/health.rs",
+        "src/key_usage/account_operations.rs",
         "src/key_usage/mod.rs",
         "src/key_usage/query.rs",
         "src/key_usage/presenter.rs",

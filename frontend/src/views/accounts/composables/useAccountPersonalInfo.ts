@@ -2,10 +2,11 @@ import type { Ref } from 'vue'
 import type { AccountPersonalInfoResponse } from '@/api'
 import { computed, shallowRef, watch } from 'vue'
 
-import { getAccountPersonalInfo } from '@/api'
 import { useRequestState } from '@/composables/useRequestState'
+import { useAccountOperations } from './accountOperations'
 
 export function useAccountPersonalInfo(accountId: Ref<string>, open: Ref<boolean>) {
+  const operations = useAccountOperations()
   const info = shallowRef<AccountPersonalInfoResponse | null>(null)
   const request = useRequestState()
   const { loading } = request
@@ -20,7 +21,7 @@ export function useAccountPersonalInfo(accountId: Ref<string>, open: Ref<boolean
 
     const version = request.start()
     try {
-      const result = await getAccountPersonalInfo({ accountId: targetAccountId }, { signal: request.signal })
+      const result = await operations.personalInfo({ accountId: targetAccountId }, { signal: request.signal })
       if (!request.isCurrent(version))
         return
       // 单项失败仍更新其他信息；仅在当前打开周期保留上次可用的统计。

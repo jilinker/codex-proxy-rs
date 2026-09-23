@@ -155,6 +155,7 @@ impl PageSize {
 /// 可审计管理写操作的发起者。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MutationActor {
+    ClientKey { client_key_id: String },
     AdminSession { admin_user_id: String },
     AdminApiKey,
     System,

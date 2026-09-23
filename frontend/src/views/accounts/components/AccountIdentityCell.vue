@@ -8,7 +8,7 @@ import AccountPlanBadge from './AccountPlanBadge.vue'
 
 type AccountRow = Awaited<ReturnType<typeof getAccounts>>['items'][number]
 type AccountIdentity = Pick<AccountRow, 'id' | 'email' | 'planType' | 'planTypeDisplay'>
-  & Partial<Pick<AccountRow, 'accountId' | 'notes' | 'name' | 'authenticationKind'>>
+  & Partial<Pick<AccountRow, 'accountId' | 'notes' | 'authenticationKind'>> & { name?: string | null }
 
 const props = withDefaults(
   defineProps<{

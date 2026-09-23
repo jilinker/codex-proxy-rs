@@ -32,6 +32,17 @@ use super::{map_store_error, publish_committed};
 /// API-facing account group management service.
 #[async_trait]
 pub trait AccountGroupService: Send + Sync {
+    async fn key_authorizations(
+        &self,
+        id: &gateway_core::routing::AccountGroupId,
+    ) -> Result<Vec<String>, AdminError>;
+    async fn replace_key_authorizations(
+        &self,
+        context: &MutationContext,
+        id: gateway_core::routing::AccountGroupId,
+        key_ids: Vec<gateway_core::policy::ClientApiKeyId>,
+    ) -> Result<(), AdminError>;
+
     async fn list(&self, query: AccountGroupListQuery) -> Result<AccountGroupPage, AdminError>;
     async fn create(
         &self,
@@ -120,6 +131,38 @@ impl DefaultAccountGroupService {
 
 #[async_trait]
 impl AccountGroupService for DefaultAccountGroupService {
+    async fn key_authorizations(
+        &self,
+        id: &gateway_core::routing::AccountGroupId,
+    ) -> Result<Vec<String>, AdminError> {
+        self.store
+            .account_group_key_authorizations(id)
+            .await
+            .map_err(|error| map_store_error(error, "group authorizations"))
+    }
+    async fn replace_key_authorizations(
+        &self,
+        context: &MutationContext,
+        id: gateway_core::routing::AccountGroupId,
+        key_ids: Vec<gateway_core::policy::ClientApiKeyId>,
+    ) -> Result<(), AdminError> {
+        if key_ids.len() > 65535
+            || key_ids
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != key_ids.len()
+        {
+            return Err(AdminError::invalid("授权 Key 列表不合法"));
+        }
+        let revision = self
+            .store
+            .replace_account_group_key_authorizations(id, key_ids, context)
+            .await
+            .map_err(|error| map_store_error(error, "group authorizations"))?;
+        publish_committed(self.snapshot.as_ref(), revision).await
+    }
+
     async fn list(&self, query: AccountGroupListQuery) -> Result<AccountGroupPage, AdminError> {
         let mut page = self
             .store

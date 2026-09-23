@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AccountGroup } from '@/api'
-import { Pencil, Power, Trash2 } from '@lucide/vue'
+import { Pencil, Power, ShieldCheck, Trash2 } from '@lucide/vue'
 
 import BaseIconButton from '@/components/base/BaseIconButton.vue'
 
@@ -11,6 +11,7 @@ defineProps<{
 }>()
 const emit = defineEmits<{
   edit: [group: AccountGroup]
+  authorize: [group: AccountGroup]
   toggle: [group: AccountGroup]
   delete: [group: AccountGroup]
 }>()
@@ -18,6 +19,9 @@ const emit = defineEmits<{
 
 <template>
   <div class="flex items-center gap-1">
+    <BaseIconButton variant="ghost" size="sm" label="Key 授权" @click.stop="emit('authorize', group)">
+      <ShieldCheck class="size-3.5 text-cp-link" />
+    </BaseIconButton>
     <BaseIconButton
       variant="ghost"
       size="sm"

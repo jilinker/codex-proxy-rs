@@ -22,3 +22,5 @@ export type AccountUsagePresentation = Pick<AccountUsage, 'windowLabelDisplay' |
     | 'inputTokensDisplay' | 'outputTokensDisplay' | 'cachedTokensDisplay'
     | 'totalTokensDisplay' | 'lastUsedAtDisplay'> & Partial<Pick<AccountModelUsage, 'billingAmountUsdDisplay'>>)[]
   }
+
+export type AccountIdentityPresentation = Pick<Account, 'id' | 'provider' | 'authenticationKind' | 'email' | 'planType' | 'planTypeDisplay'> & { name?: string | null, accountId?: string | null }

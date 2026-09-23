@@ -500,3 +500,141 @@ async fn disable_fast_group_updates_preserve_omitted_values_and_publish_snapshot
     }
     database.close().await;
 }
+
+#[tokio::test]
+async fn authorizations_follow_enabled_groups_keys_and_members_without_changing_routing() {
+    let Some(database) = TestDatabase::create("group_key_authorizations").await else {
+        return;
+    };
+    let groups = PgAccountGroupRepository::new(database.pool.clone());
+    let keys = PgAdminClientKeyStore::new(database.pool.clone());
+    let key = ClientApiKeyId::new("key_granted").unwrap();
+    keys.create_client_key(new_key(key.as_str(), Vec::new()), &context("key"))
+        .await
+        .unwrap();
+    for id in [MIXED_GROUP, EMPTY_GROUP] {
+        groups
+            .create_account_group(
+                NewAccountGroup {
+                    id: group_id(id),
+                    name: id.to_owned(),
+                    description: None,
+                    color: group_color("#2563EBFF"),
+                    disable_fast: false,
+                },
+                &context("group"),
+            )
+            .await
+            .unwrap();
+    }
+    seed_account(&database.pool, "acct_granted", "openai", "Granted").await;
+    assign_accounts(&database.pool, MIXED_GROUP, &["acct_granted"]).await;
+    assign_accounts(&database.pool, EMPTY_GROUP, &["acct_granted"]).await;
+    sqlx::query("update provider_accounts set enabled = false where id = 'acct_granted'")
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    for id in [MIXED_GROUP, EMPTY_GROUP] {
+        groups
+            .replace_account_group_key_authorizations(
+                group_id(id),
+                vec![key.clone()],
+                &context("grant"),
+            )
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        groups.authorized_account_ids(&key).await.unwrap(),
+        vec!["acct_granted"]
+    );
+    assert!(
+        keys.get_client_key(&key)
+            .await
+            .unwrap()
+            .unwrap()
+            .groups
+            .is_empty()
+    );
+    let invalid = groups
+        .replace_account_group_key_authorizations(
+            group_id(MIXED_GROUP),
+            vec![ClientApiKeyId::new("missing").unwrap()],
+            &context("invalid"),
+        )
+        .await;
+    assert_eq!(invalid.unwrap_err().kind(), AdminStoreErrorKind::Invalid);
+    assert_eq!(
+        groups
+            .account_group_key_authorizations(&group_id(MIXED_GROUP))
+            .await
+            .unwrap(),
+        vec![key.to_string()]
+    );
+    groups
+        .replace_account_group_key_authorizations(
+            group_id(MIXED_GROUP),
+            Vec::new(),
+            &context("revoke"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        groups.authorized_account_ids(&key).await.unwrap(),
+        vec!["acct_granted"]
+    );
+    sqlx::query("update account_groups set enabled = false where id = $1")
+        .bind(EMPTY_GROUP)
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    assert!(
+        groups
+            .authorized_account_ids(&key)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    sqlx::query("update account_groups set enabled = true where id = $1")
+        .bind(EMPTY_GROUP)
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    sqlx::query("update client_api_keys set enabled = false where id = $1")
+        .bind(key.as_str())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    assert!(
+        groups
+            .authorized_account_ids(&key)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    sqlx::query("update client_api_keys set enabled = true where id = $1")
+        .bind(key.as_str())
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    sqlx::query("delete from account_group_accounts where account_group_id = $1")
+        .bind(EMPTY_GROUP)
+        .execute(&database.pool)
+        .await
+        .unwrap();
+    assert!(
+        groups
+            .authorized_account_ids(&key)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let audits: i64 = sqlx::query_scalar(
+        "select count(*) from admin_audit_events where action = 'account_group.authorize_keys'",
+    )
+    .fetch_one(&database.pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 3);
+    database.close().await;
+}

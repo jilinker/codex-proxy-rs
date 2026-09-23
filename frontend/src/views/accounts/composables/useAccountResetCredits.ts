@@ -1,14 +1,13 @@
+import type { AccountOperations } from './accountOperations'
 import type { AccountResetCredit } from '@/api'
 import { computed, shallowReactive, shallowRef, watch } from 'vue'
-import {
-  consumeAccountResetCredit,
-  getAccountResetCredits,
-} from '@/api'
-
 import { ApiError } from '@/api/request'
 import { toast } from '@/components/base/BaseToast'
+
+import { useAuthStore } from '@/stores/modules/auth'
 import { errorMessage } from '@/utils/async'
 import { generateRequestId } from '@/utils/uuid'
+import { useAccountOperations } from './accountOperations'
 
 interface PendingResetCreditOperation {
   accountId: string
@@ -35,10 +34,16 @@ interface ResetCreditsSession {
 }
 
 // 库存仍以主动查询的上游结果为准；未决操作和消费锁必须跨展开行卸载存续。
-const sessionsByAccountId = new Map<string, ResetCreditsSession>()
+const sessionsByIdentity = new WeakMap<object, Map<string, ResetCreditsSession>>()
 
-function getResetCreditsSession(accountId: string) {
-  let session = sessionsByAccountId.get(accountId)
+function getResetCreditsSession(identity: object, scope: string, accountId: string) {
+  let sessionsByAccountId = sessionsByIdentity.get(identity)
+  if (!sessionsByAccountId) {
+    sessionsByAccountId = new Map()
+    sessionsByIdentity.set(identity, sessionsByAccountId)
+  }
+  const key = `${scope}:${accountId}`
+  let session = sessionsByAccountId.get(key)
   if (!session) {
     session = shallowReactive<ResetCreditsSession>({
       accountId,
@@ -49,12 +54,12 @@ function getResetCreditsSession(accountId: string) {
       loadError: '',
       loadSequence: 0,
     })
-    sessionsByAccountId.set(accountId, session)
+    sessionsByAccountId.set(key, session)
   }
   return session
 }
 
-async function loadSessionCredits(session: ResetCreditsSession, silent = false) {
+async function loadSessionCredits(operations: AccountOperations, session: ResetCreditsSession, silent = false) {
   const sequence = ++session.loadSequence
   session.loadController?.abort()
   const controller = new AbortController()
@@ -62,7 +67,7 @@ async function loadSessionCredits(session: ResetCreditsSession, silent = false) 
   session.loading = true
   session.loadError = ''
   try {
-    const result = await getAccountResetCredits({ accountId: session.accountId }, { silent, signal: controller.signal })
+    const result = await operations.resetCredits({ accountId: session.accountId }, { silent, signal: controller.signal })
     if (sequence !== session.loadSequence)
       return
     session.snapshot = {
@@ -71,8 +76,13 @@ async function loadSessionCredits(session: ResetCreditsSession, silent = false) 
     }
   }
   catch (error: unknown) {
-    if (sequence === session.loadSequence)
+    if (sequence === session.loadSequence) {
       session.loadError = errorMessage(error)
+      if (error instanceof ApiError && [401, 403, 404].includes(error.status ?? 0)) {
+        session.snapshot = null
+        session.pendingOperation = null
+      }
+    }
   }
   finally {
     if (sequence === session.loadSequence)
@@ -84,7 +94,9 @@ export function useAccountResetCredits(options: {
   accountId: () => string
   onConsumed: (accountId: string) => void
 }) {
-  const session = shallowRef(getResetCreditsSession(options.accountId()))
+  const operations = useAccountOperations()
+  const identity = useAuthStore().session ?? {}
+  const session = shallowRef(getResetCreditsSession(identity, operations.scope, options.accountId()))
   const credits = computed(() => session.value.snapshot?.credits ?? [])
   const availableCount = computed(() => session.value.snapshot?.availableCount ?? 0)
   const hasSnapshot = computed(() => session.value.snapshot !== null)
@@ -180,7 +192,7 @@ export function useAccountResetCredits(options: {
     target.consuming = true
     try {
       // 不可逆消费由当前会话区分已确认失败与结果未知，不能先弹出可重试的通用错误。
-      const result = await consumeAccountResetCredit({
+      const result = await operations.consumeResetCredit({
         accountId: operation.accountId,
         creditId: operation.creditId,
         redeemRequestId: operation.redeemRequestId,
@@ -190,7 +202,7 @@ export function useAccountResetCredits(options: {
       target.pendingOperation = null
       if (!confirmed) {
         toast.error(resetResultMessage(result.code))
-        await loadSessionCredits(target, true)
+        await loadSessionCredits(operations, target, true)
         return false
       }
 
@@ -203,7 +215,7 @@ export function useAccountResetCredits(options: {
       options.onConsumed(operation.accountId)
       toast.success(successMessage)
       applyConfirmedConsumption(target, operation)
-      await loadSessionCredits(target, true)
+      await loadSessionCredits(operations, target, true)
       return true
     }
     catch (error: unknown) {
@@ -217,7 +229,7 @@ export function useAccountResetCredits(options: {
       else {
         target.pendingOperation = null
         toast.error(errorMessage(error, '额度重置失败'))
-        await loadSessionCredits(target, true)
+        await loadSessionCredits(operations, target, true)
       }
       return false
     }
@@ -229,7 +241,7 @@ export function useAccountResetCredits(options: {
   watch(
     options.accountId,
     (accountId) => {
-      const target = getResetCreditsSession(accountId)
+      const target = getResetCreditsSession(identity, operations.scope, accountId)
       session.value = target
       selectedCreditId.value = ''
       showConfirm.value = false
@@ -256,7 +268,7 @@ export function useAccountResetCredits(options: {
     loadError,
     ambiguous,
     showConfirm,
-    loadCredits: () => loadSessionCredits(session.value),
+    loadCredits: () => loadSessionCredits(operations, session.value),
     selectCredit,
     requestConsume,
     cancelConsume,

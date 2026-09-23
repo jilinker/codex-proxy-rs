@@ -377,6 +377,7 @@ pub async fn initialize(
         &store,
         registry.clone(),
         system.clone(),
+        accounts.clone(),
     ));
     let openai = Arc::new(DefaultOpenAiService::new(
         openai,

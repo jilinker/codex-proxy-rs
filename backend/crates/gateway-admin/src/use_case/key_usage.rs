@@ -9,9 +9,9 @@ use async_trait::async_trait;
 use chrono::{Duration, Utc};
 
 use crate::{
-    AuthService, SystemService,
+    AccountsService, AuthService, SystemService,
     model::{
-        AdminError, AdminErrorKind,
+        AdminError, AdminErrorKind, MutationActor, MutationContext,
         auth::SessionSubject,
         client_keys::ClientKeySecret,
         key_usage::{
@@ -23,12 +23,18 @@ use crate::{
         observability::{
             OpsErrorFilter, OpsErrorQuery, TimeRange, UsageFilter, UsageQuery, china_day_start,
         },
+        provider_credentials::{
+            AccountPersonalInfo, ConsumeProviderResetCredit, ProviderProfileAvatar,
+            ProviderResetCreditResult, ProviderResetCredits,
+        },
+        quota_forecast::AccountQuotaForecastReport,
         system::SystemVersion,
     },
     ports::{
         provider::{ProviderAdminErrorKind, ProviderAdminRegistry},
         store::{
-            AccountGroupStore, AccountStore, AdminStorePorts, ClientKeyStore, ObservabilityStore,
+            AccountGroupStore, AccountStore, AdminStorePorts, AuthStore, ClientKeyStore,
+            ObservabilityStore,
         },
     },
 };
@@ -45,6 +51,37 @@ use super::{map_store_error, observability::health_timeline_at};
 
 #[async_trait]
 pub trait KeyUsageService: Send + Sync {
+    async fn personal_info(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<AccountPersonalInfo>, AdminError>;
+    async fn profile_avatar(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<ProviderProfileAvatar>, AdminError>;
+    async fn quota_forecast(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<AccountQuotaForecastReport>, AdminError>;
+    async fn reset_credits(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<ProviderResetCredits>, AdminError>;
+    async fn consume_reset_credit(
+        &self,
+        session_id: Option<&str>,
+        command: ConsumeProviderResetCredit,
+    ) -> Result<Option<ProviderResetCreditResult>, AdminError>;
+    async fn refresh_quota(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<KeyUsageAccountSnapshot>, AdminError>;
+
     /// 验证 Key 并只读查询当前额度，不记录 Key 使用或执行推理准入。
     async fn budget(&self, plaintext: &str) -> Result<Option<ClientBudgetStatus>, AdminError>;
 
@@ -80,6 +117,7 @@ pub trait KeyUsageService: Send + Sync {
 
 pub(crate) struct DefaultKeyUsageService {
     auth: Arc<dyn AuthService>,
+    audit: Arc<dyn AuthStore>,
     verifier: Arc<dyn ClientKeyVerifier>,
     keys: Arc<dyn ClientKeyStore>,
     account_groups: Arc<dyn AccountGroupStore>,
@@ -87,6 +125,7 @@ pub(crate) struct DefaultKeyUsageService {
     observations: Arc<dyn ObservabilityStore>,
     providers: ProviderAdminRegistry,
     system: Arc<dyn SystemService>,
+    account_service: Arc<dyn AccountsService>,
 }
 
 impl DefaultKeyUsageService {
@@ -96,9 +135,11 @@ impl DefaultKeyUsageService {
         store: &AdminStorePorts,
         providers: ProviderAdminRegistry,
         system: Arc<dyn SystemService>,
+        account_service: Arc<dyn AccountsService>,
     ) -> Self {
         Self {
             auth,
+            audit: store.auth(),
             verifier,
             keys: store.client_keys(),
             account_groups: store.account_groups(),
@@ -106,7 +147,36 @@ impl DefaultKeyUsageService {
             observations: store.observability(),
             providers,
             system,
+            account_service,
         }
+    }
+
+    // 在不可逆操作之前记录发起身份 审计不可用时不发送上游请求
+    async fn audit_action(
+        &self,
+        context: &MutationContext,
+        account_id: &ProviderAccountId,
+        action: &str,
+    ) -> Result<(), AdminError> {
+        let MutationActor::ClientKey { client_key_id } = &context.actor else {
+            return Err(AdminError::new(AdminErrorKind::Forbidden, "身份不合法"));
+        };
+        self.audit
+            .append_audit_event(crate::model::auth::AdminAuditEvent {
+                id: format!("audit_{}", uuid::Uuid::now_v7().simple()),
+                actor_kind: crate::model::auth::AuditActorKind::ClientKey,
+                actor_admin_user_id: None,
+                actor_ref: format!("key:{client_key_id}"),
+                request_id: Some(context.request_id.clone()),
+                action: action.to_owned(),
+                entity_kind: "provider_account".to_owned(),
+                entity_ref: account_id.to_string(),
+                config_revision: None,
+                changed_fields: Vec::new(),
+                occurred_at: Utc::now(),
+            })
+            .await
+            .map_err(|error| map_store_error(error, "key account audit"))
     }
 
     async fn key_id(&self, session_id: Option<&str>) -> Result<Option<ClientApiKeyId>, AdminError> {
@@ -139,38 +209,70 @@ impl DefaultKeyUsageService {
             .map(|key| key.filter(|key| key.enabled))
     }
 
+    async fn require_account_authorization(
+        &self,
+        session_id: Option<&str>,
+        account_id: &ProviderAccountId,
+    ) -> Result<Option<MutationContext>, AdminError> {
+        let Some(key) = self.key(session_id).await? else {
+            return Ok(None);
+        };
+        let ids = self
+            .account_groups
+            .authorized_account_ids(&key.id)
+            .await
+            .map_err(|error| map_store_error(error, "account authorization"))?;
+        if !ids.iter().any(|id| id == account_id.as_str()) {
+            return Err(AdminError::not_found("资源不存在"));
+        }
+        Ok(Some(MutationContext {
+            actor: MutationActor::ClientKey {
+                client_key_id: key.id.to_string(),
+            },
+            request_id: format!("key_{}", uuid::Uuid::now_v7().simple()),
+        }))
+    }
+
     async fn account_scope(
         &self,
         key: &crate::model::client_keys::ClientKeyRecord,
-    ) -> Result<(KeyUsageAccountScopeState, Vec<String>), AdminError> {
-        if key.groups.is_empty() {
-            return Ok((KeyUsageAccountScopeState::Unbound, Vec::new()));
-        }
+    ) -> Result<(KeyUsageAccountScopeState, Vec<String>, BTreeSet<String>), AdminError> {
+        let authorized: BTreeSet<_> = self
+            .account_groups
+            .authorized_account_ids(&key.id)
+            .await
+            .map_err(|error| map_store_error(error, "account authorization"))?
+            .into_iter()
+            .collect();
         let group_ids = key
             .groups
             .iter()
             .filter(|group| group.enabled)
             .map(|group| group.id.clone())
             .collect::<Vec<_>>();
-        if group_ids.is_empty() {
-            return Ok((KeyUsageAccountScopeState::NoEnabledGroups, Vec::new()));
-        }
-        let account_ids = self
-            .account_groups
-            .load_account_group_members(&group_ids)
-            .await
-            .map_err(|error| map_store_error(error, "key usage account scope"))?
-            .into_iter()
-            .map(|member| member.account_id)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        Ok((KeyUsageAccountScopeState::Available, account_ids))
+        let scope = if !authorized.is_empty() || !group_ids.is_empty() {
+            KeyUsageAccountScopeState::Available
+        } else if key.groups.is_empty() {
+            KeyUsageAccountScopeState::Unbound
+        } else {
+            KeyUsageAccountScopeState::NoEnabledGroups
+        };
+        let mut ids = authorized.clone();
+        ids.extend(
+            self.account_groups
+                .load_account_group_members(&group_ids)
+                .await
+                .map_err(|error| map_store_error(error, "key usage account scope"))?
+                .into_iter()
+                .map(|member| member.account_id),
+        );
+        Ok((scope, ids.into_iter().collect(), authorized))
     }
 
     async fn account_snapshots(
         &self,
         account_ids: &[String],
+        authorized: &BTreeSet<String>,
     ) -> Result<Vec<KeyUsageAccountSnapshot>, AdminError> {
         if account_ids.is_empty() {
             return Ok(Vec::new());
@@ -248,6 +350,7 @@ impl DefaultKeyUsageService {
                     item.account.provider_kind.as_str(),
                     item.account.plan_type.as_deref(),
                 ),
+                authorized: authorized.contains(&item.account.id),
                 item,
                 quota,
                 usage: None,
@@ -337,6 +440,167 @@ fn usage_filter(id: &ClientApiKeyId, model: Option<String>) -> UsageFilter {
 
 #[async_trait]
 impl KeyUsageService for DefaultKeyUsageService {
+    async fn personal_info(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<AccountPersonalInfo>, AdminError> {
+        let Some(_context) = self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let result = self
+            .account_service
+            .personal_info(&account_id)
+            .await
+            .map_err(key_account_error)?;
+        if self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(result))
+    }
+    async fn profile_avatar(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<ProviderProfileAvatar>, AdminError> {
+        let Some(_context) = self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let result = self
+            .account_service
+            .profile_avatar(&account_id)
+            .await
+            .map_err(key_account_error)?;
+        if self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(result))
+    }
+    async fn quota_forecast(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<AccountQuotaForecastReport>, AdminError> {
+        let Some(_context) = self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let result = self
+            .account_service
+            .quota_forecast(&account_id)
+            .await
+            .map_err(key_account_error)?;
+        if self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(result))
+    }
+    async fn reset_credits(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<ProviderResetCredits>, AdminError> {
+        let Some(context) = self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let result = self
+            .account_service
+            .reset_credits(&context, account_id.clone())
+            .await
+            .map_err(key_account_error)?;
+        if self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(result))
+    }
+    async fn consume_reset_credit(
+        &self,
+        session_id: Option<&str>,
+        command: ConsumeProviderResetCredit,
+    ) -> Result<Option<ProviderResetCreditResult>, AdminError> {
+        let account_id = command.account_id.clone();
+        let Some(context) = self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.audit_action(&context, &account_id, "key_account.reset_credit.requested")
+            .await?;
+        let result = self
+            .account_service
+            .consume_reset_credit(&context, command)
+            .await
+            .map_err(key_account_error)?;
+        if self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        Ok(Some(result))
+    }
+    async fn refresh_quota(
+        &self,
+        session_id: Option<&str>,
+        account_id: ProviderAccountId,
+    ) -> Result<Option<KeyUsageAccountSnapshot>, AdminError> {
+        let Some(context) = self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.audit_action(&context, &account_id, "key_account.quota_refresh.requested")
+            .await?;
+        self.account_service
+            .quota(&account_id, true)
+            .await
+            .map_err(key_account_error)?;
+        if self
+            .require_account_authorization(session_id, &account_id)
+            .await?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        self.account_detail(
+            session_id,
+            KeyUsageAccountDetailQuery {
+                account_id: account_id.to_string(),
+            },
+        )
+        .await
+    }
+
     async fn budget(&self, plaintext: &str) -> Result<Option<ClientBudgetStatus>, AdminError> {
         let id = match self.verifier.verify_client_key(plaintext) {
             Ok(id) => id,
@@ -455,7 +719,7 @@ impl KeyUsageService for DefaultKeyUsageService {
         let Some(key) = self.key(session_id).await? else {
             return Ok(None);
         };
-        let (scope_state, account_ids) = self.account_scope(&key).await?;
+        let (scope_state, account_ids, authorized) = self.account_scope(&key).await?;
         let total = u64::try_from(account_ids.len()).unwrap_or(u64::MAX);
         let start = usize::try_from(query.current_page.saturating_sub(1))
             .unwrap_or(usize::MAX)
@@ -470,7 +734,7 @@ impl KeyUsageService for DefaultKeyUsageService {
             .unwrap_or_default();
         Ok(Some(KeyUsageAccountList {
             scope_state,
-            items: self.account_snapshots(page_ids).await?,
+            items: self.account_snapshots(page_ids, &authorized).await?,
             current_page: query.current_page,
             page_size: query.page_size.get(),
             total,
@@ -485,15 +749,19 @@ impl KeyUsageService for DefaultKeyUsageService {
         let Some(key) = self.key(session_id).await? else {
             return Ok(None);
         };
-        let (_, account_ids) = self.account_scope(&key).await?;
+        let (_, account_ids, authorized) = self.account_scope(&key).await?;
         if account_ids.binary_search(&query.account_id).is_err() {
             return Err(AdminError::new(AdminErrorKind::NotFound, "资源不存在"));
         }
-        self.account_snapshots(std::slice::from_ref(&query.account_id))
+        self.account_snapshots(std::slice::from_ref(&query.account_id), &authorized)
             .await?
             .into_iter()
             .next()
             .map(Some)
             .ok_or_else(|| AdminError::new(AdminErrorKind::NotFound, "资源不存在"))
     }
+}
+
+fn key_account_error(error: AdminError) -> AdminError {
+    AdminError::new(error.kind(), "账号操作暂不可用 请稍后重试")
 }

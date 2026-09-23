@@ -484,7 +484,7 @@ impl AccountIdQuery {
         require_account_id(&self.account_id, "accountId")
     }
 
-    pub(super) fn into_id(self) -> Result<ProviderAccountId, WireValidationError> {
+    pub(crate) fn into_id(self) -> Result<ProviderAccountId, WireValidationError> {
         self.validate()?;
         ProviderAccountId::new(self.account_id).map_err(|_| WireValidationError::new("accountId"))
     }
@@ -511,7 +511,7 @@ impl AccountProfileAvatarQuery {
         Ok(())
     }
 
-    pub(super) fn into_id(self) -> Result<ProviderAccountId, WireValidationError> {
+    pub(crate) fn into_id(self) -> Result<ProviderAccountId, WireValidationError> {
         self.validate()?;
         ProviderAccountId::new(self.account_id).map_err(|_| WireValidationError::new("accountId"))
     }
@@ -569,7 +569,7 @@ impl AccountActionRequest {
         require_account_id(&self.account_id, "accountId")
     }
 
-    pub(super) fn into_id(self) -> Result<ProviderAccountId, WireValidationError> {
+    pub(crate) fn into_id(self) -> Result<ProviderAccountId, WireValidationError> {
         self.validate()?;
         ProviderAccountId::new(self.account_id).map_err(|_| WireValidationError::new("accountId"))
     }
@@ -605,7 +605,7 @@ impl AccountResetCreditConsumeRequest {
         Ok(())
     }
 
-    pub(super) fn into_command(self) -> Result<ConsumeProviderResetCredit, WireValidationError> {
+    pub(crate) fn into_command(self) -> Result<ConsumeProviderResetCredit, WireValidationError> {
         self.validate()?;
         Ok(ConsumeProviderResetCredit {
             account_id: ProviderAccountId::new(self.account_id)

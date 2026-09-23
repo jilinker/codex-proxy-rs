@@ -136,6 +136,7 @@ pub struct CredentialImportCommit {
 /// OAuth pending owner 的中立身份；不编码具体 Provider 的 Redis key 或 JSON。
 #[derive(Clone, PartialEq, Eq)]
 pub enum AuthorizationOwner {
+    ClientKey { client_key_id: String },
     AdminSession { admin_user_id: String },
     AdminApiKey,
     System,
@@ -158,6 +159,9 @@ impl AuthorizationOwnerBinding {
     #[must_use]
     pub fn from_context(context: &MutationContext) -> Self {
         let owner = match &context.actor {
+            MutationActor::ClientKey { client_key_id } => AuthorizationOwner::ClientKey {
+                client_key_id: client_key_id.clone(),
+            },
             MutationActor::AdminSession { admin_user_id } => AuthorizationOwner::AdminSession {
                 admin_user_id: admin_user_id.clone(),
             },
@@ -283,6 +287,9 @@ impl PendingAuthorizationMutation {
             AuthorizationOwner::AdminSession { admin_user_id } => {
                 serde_json::json!({"kind": "admin_session", "admin_user_id": admin_user_id})
             }
+            AuthorizationOwner::ClientKey { client_key_id } => {
+                serde_json::json!({"kind": "client_key", "client_key_id": client_key_id})
+            }
             AuthorizationOwner::AdminApiKey => serde_json::json!({"kind": "admin_api_key"}),
             AuthorizationOwner::System => serde_json::json!({"kind": "system"}),
         };
@@ -334,6 +341,9 @@ impl PendingAuthorizationMutation {
             StoredAuthorizationOwnerV1::AdminSession { admin_user_id } => {
                 AuthorizationOwner::AdminSession { admin_user_id }
             }
+            StoredAuthorizationOwnerV1::ClientKey { client_key_id } => {
+                AuthorizationOwner::ClientKey { client_key_id }
+            }
             StoredAuthorizationOwnerV1::AdminApiKey => AuthorizationOwner::AdminApiKey,
             StoredAuthorizationOwnerV1::System => AuthorizationOwner::System,
         };
@@ -379,6 +389,7 @@ enum StoredAuthorizationTargetV1 {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum StoredAuthorizationOwnerV1 {
+    ClientKey { client_key_id: String },
     AdminSession { admin_user_id: String },
     AdminApiKey,
     System,

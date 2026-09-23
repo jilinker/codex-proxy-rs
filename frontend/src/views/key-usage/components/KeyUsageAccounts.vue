@@ -9,6 +9,7 @@ import { defineTableColumns } from '@/components/base/BaseTable/columns'
 import BaseTable from '@/components/base/BaseTable/index.vue'
 import LastUsedAtCell from '@/components/LastUsedAtCell.vue'
 import ProviderIconGroup from '@/components/ProviderIconGroup.vue'
+import AccountIdentityCell from '@/views/accounts/components/AccountIdentityCell.vue'
 import AccountPlanBadge from '@/views/accounts/components/AccountPlanBadge.vue'
 import AccountQuotaSummaryCell from '@/views/accounts/components/AccountQuotaSummaryCell/index.vue'
 import AccountStatusBadge from '@/views/accounts/components/AccountStatusBadge/index.vue'
@@ -16,9 +17,9 @@ import { useAccountsTable } from '@/views/accounts/composables/useAccountsTable'
 import KeyUsageAccountDetail from './KeyUsageAccountDetail.vue'
 
 const props = defineProps<{ rows: KeyUsageAccount[], pagination: Pagination, loading: boolean, error: string, scopeState: KeyUsageAccountScopeState }>()
-defineEmits<{ pageChange: [page: number], pageSizeChange: [size: number] }>()
+defineEmits<{ pageChange: [page: number], pageSizeChange: [size: number], updated: [account: KeyUsageAccount], accessChanged: [] }>()
 const { expandedAccountIds, expandedRowKeys, toggleExpanded } = useAccountsTable(toRef(props, 'rows'))
-watch(() => props.rows, () => expandedAccountIds.value = new Set())
+watch(() => props.rows.map(row => row.id).join('\0'), () => expandedAccountIds.value = new Set())
 const columns = defineTableColumns<KeyUsageAccount>([
   { key: 'expander', kind: 'expander', hideable: false },
   { key: 'identity', label: '账号', kind: 'identity', size: '3xl' },
@@ -66,7 +67,8 @@ const emptyText = computed(() => {
           </button>
         </template>
         <template #identity="{ row }">
-          <span class="block truncate font-mono text-cp-sm font-heavy text-cp-text">{{ row.identity || '—' }}</span>
+          <AccountIdentityCell v-if="row.capabilities.fullIdentity" :account="row" title-mode="email" />
+          <span v-else class="block truncate font-mono text-cp-sm font-heavy text-cp-text">{{ row.identity || '—' }}</span>
         </template>
         <template #provider="{ row }">
           <ProviderIconGroup :provider="row.provider" :authentication-kind="row.authenticationKind" />
@@ -84,7 +86,7 @@ const emptyText = computed(() => {
           <LastUsedAtCell :value="row.usage.lastUsedAt" />
         </template>
         <template #expanded="{ row }">
-          <KeyUsageAccountDetail :account-id="row.id" />
+          <KeyUsageAccountDetail :account-id="row.id" @updated="$emit('updated', $event)" @access-changed="$emit('accessChanged')" />
         </template>
       </BaseTable>
     </div>

@@ -76,6 +76,7 @@ pub struct KeyUsageAccountQuota {
 
 #[derive(Debug, Clone)]
 pub struct KeyUsageAccountSnapshot {
+    pub authorized: bool,
     pub item: AccountPageItem,
     pub plan_type_display: Option<String>,
     pub quota: KeyUsageAccountQuota,

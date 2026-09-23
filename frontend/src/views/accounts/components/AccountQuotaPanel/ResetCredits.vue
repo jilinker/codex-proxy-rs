@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Account, AccountResetCredit } from '@/api'
+import type { AccountResetCredit } from '@/api'
 import { AlertTriangle, RefreshCw, TicketCheck } from '@lucide/vue'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -13,7 +13,7 @@ import { useAccountResetCredits } from '../../composables/useAccountResetCredits
 import UsageLimits from './UsageLimits.vue'
 
 const props = defineProps<{
-  account: Account
+  account: { id: string, quota: { windows: import('@/api').AccountQuotaWindow[] } }
 }>()
 
 const emit = defineEmits<{

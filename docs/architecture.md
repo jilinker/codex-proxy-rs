@@ -340,7 +340,10 @@ AuthService 每次恢复 Key 会话时重新检查 Key 是否存在且启用；K
 事务提交后旧管理员会话的指纹失配，不依赖 Redis 批量删除完成撤销；原始密码及密码哈希不进入 Redis。
 KeyUsageService 从 AuthService 的服务端身份或 Core 的 ClientKeyVerifier 只读校验确定唯一查询范围，复用 ClientKeyStore 的额度账本投影和
 ObservabilityStore 的范围查询；Bearer 查询仅提供当前额度，不执行推理准入或开启窗口。
-账号用量仅查询 Key 显式配置且已启用分组的账号并集，读取 Provider 已持久化额度快照，不触发上游请求或调度观测写入。
+账号用量范围为 Key 已启用路由分组与已启用授权分组的账号并集。独立授权关系由 AccountGroupStore 持久化，
+不改变路由绑定，不从旧路由关系自动回填。只读列表读取 Provider 已持久化额度快照；仅授权分组成员可读取完整身份并执行指定账号操作。
+KeyUsageService 在每次操作前校验服务端身份与当前授权，复用同一 AccountsService 实例，保持额度重置的账号锁和幂等重试一致。
+Key 操作使用独立 HTTP 路由与审计身份；前端通过接口适配复用账号展示及操作组件，重置卡待确认状态按登录身份隔离。
 API 只输出各入口所需的字段白名单，不复用管理员的宽响应；账号投影不包含费用、凭据和管理操作字段。
 客户端配置通过 ClientKeyStore 显式读取当前会话绑定 Key 的明文，不进入用量响应。
 前端 `/key-usage` 独立于管理布局，不挂载管理员菜单或请求管理接口；配置弹窗和 Codex / CCSwitch
@@ -348,7 +351,7 @@ API 只输出各入口所需的字段白名单，不复用管理员的宽响应�
 
 ## 6. 路由、账号范围与 continuation
 
-Client Key 与账号分组形成授权范围：
+Client Key 与账号分组的路由绑定形成推理范围：
 
 - 没有分组关联表示 `AllAccounts`；
 - 有关联时只允许已启用分组成员的并集；

@@ -263,9 +263,9 @@ pub(super) struct MemoryAuthStore {
     pub(super) unavailable: AtomicBool,
     password_hash: Mutex<Option<String>>,
     sessions: Mutex<BTreeMap<String, AuthSession>>,
-    audits: Mutex<Vec<AdminAuditEvent>>,
+    pub(super) audits: Mutex<Vec<AdminAuditEvent>>,
     api_key: Arc<Mutex<Option<AdminApiKey>>>,
-    fail_audit: AtomicBool,
+    pub(super) fail_audit: AtomicBool,
 }
 
 impl MemoryAuthStore {
@@ -615,6 +615,7 @@ struct MemoryAccountGroupState {
 }
 
 pub(super) struct MemoryAccountGroupStore {
+    authorizations: Mutex<BTreeMap<gateway_core::routing::AccountGroupId, Vec<ClientApiKeyId>>>,
     state: Mutex<MemoryAccountGroupState>,
 }
 
@@ -667,6 +668,7 @@ impl MemoryAccountGroupStore {
             ),
         ]);
         Self {
+            authorizations: Mutex::new(BTreeMap::new()),
             state: Mutex::new(MemoryAccountGroupState {
                 revision: Revision::new(7).expect("revision"),
                 groups,
@@ -677,6 +679,51 @@ impl MemoryAccountGroupStore {
 
 #[async_trait]
 impl AccountGroupStore for MemoryAccountGroupStore {
+    async fn authorized_account_ids(&self, key: &ClientApiKeyId) -> AdminStoreResult<Vec<String>> {
+        let ids = {
+            let state = self.state.lock().unwrap();
+            self.authorizations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(id, keys)| {
+                    keys.contains(key) && state.groups.get(*id).is_some_and(|g| g.enabled)
+                })
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>()
+        };
+        Ok(self
+            .load_account_group_members(&ids)
+            .await?
+            .into_iter()
+            .map(|member| member.account_id)
+            .collect())
+    }
+    async fn account_group_key_authorizations(
+        &self,
+        id: &gateway_core::routing::AccountGroupId,
+    ) -> AdminStoreResult<Vec<String>> {
+        Ok(self
+            .authorizations
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(ToString::to_string)
+            .collect())
+    }
+    async fn replace_account_group_key_authorizations(
+        &self,
+        id: gateway_core::routing::AccountGroupId,
+        keys: Vec<ClientApiKeyId>,
+        _: &MutationContext,
+    ) -> AdminStoreResult<Revision> {
+        self.authorizations.lock().unwrap().insert(id, keys);
+        Ok(Revision::new(8).unwrap())
+    }
+
     async fn list_account_groups(
         &self,
         query: AccountGroupListQuery,
@@ -1009,7 +1056,13 @@ impl AccountStore for UnusedStore {
         _: TimeRange,
         _: &[String],
     ) -> AdminStoreResult<Vec<AccountUsage>> {
-        Err(unavailable("account usage"))
+        Ok(self
+            .account_usage
+            .lock()
+            .unwrap()
+            .clone()
+            .into_iter()
+            .collect())
     }
 
     async fn load_account_usage_by_windows(
@@ -1401,7 +1454,61 @@ impl ProviderAdmin for UnusedProvider {
         &self,
         _: gateway_admin::model::provider_credentials::ProviderQuotaRequest,
     ) -> Result<ProviderQuota, ProviderAdminError> {
-        Err(unsupported_provider())
+        self.quota
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(unsupported_provider)
+    }
+
+    async fn reset_credits(
+        &self,
+        _: &ProviderAccountId,
+    ) -> Result<gateway_admin::model::provider_credentials::ProviderResetCredits, ProviderAdminError>
+    {
+        if self.quota.lock().unwrap().is_none() {
+            return Err(unsupported_provider());
+        }
+        Ok(
+            gateway_admin::model::provider_credentials::ProviderResetCredits {
+                available_count: 1,
+                credits: Vec::new(),
+            },
+        )
+    }
+    async fn consume_reset_credit(
+        &self,
+        _: gateway_admin::model::provider_credentials::ConsumeProviderResetCredit,
+    ) -> Result<
+        gateway_admin::model::provider_credentials::ProviderResetCreditResult,
+        ProviderAdminError,
+    > {
+        if self.quota.lock().unwrap().is_none() {
+            return Err(unsupported_provider());
+        }
+        Ok(
+            gateway_admin::model::provider_credentials::ProviderResetCreditResult {
+                code: "reset".to_owned(),
+                credit: None,
+            },
+        )
+    }
+    async fn profile_avatar(
+        &self,
+        _: &ProviderAccountId,
+    ) -> Result<gateway_admin::model::provider_credentials::ProviderProfileAvatar, ProviderAdminError>
+    {
+        if self.quota.lock().unwrap().is_none() {
+            return Err(unsupported_provider());
+        }
+        Ok(
+            gateway_admin::model::provider_credentials::ProviderProfileAvatar {
+                content_type: Some("image/png".to_owned()),
+                content_length: Some(0),
+                etag: None,
+                body: Box::pin(futures::stream::empty()),
+            },
+        )
     }
 
     async fn models(

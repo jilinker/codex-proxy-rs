@@ -1,14 +1,16 @@
 import type { Ref } from 'vue'
 import type { Account, AccountQuotaForecastResponse } from '@/api'
 import { onScopeDispose, shallowRef, watch } from 'vue'
-import { getAccountQuotaForecast, refreshAccountQuota } from '@/api'
+import { refreshAccountQuota } from '@/api'
 import { toast } from '@/components/base/BaseToast'
+import { useAccountOperations } from './accountOperations'
 
 export function useAccountQuotaForecast(
   accountId: Ref<string>,
   open: Ref<boolean>,
   onAccountUpdated: (account: Account) => void,
 ) {
+  const operations = useAccountOperations()
   const report = shallowRef<AccountQuotaForecastResponse | null>(null)
   const loading = shallowRef(false)
   const refreshing = shallowRef(false)
@@ -33,7 +35,7 @@ export function useAccountQuotaForecast(
     loading.value = true
     error.value = false
     try {
-      const result = await getAccountQuotaForecast({ accountId: accountId.value }, { signal: controller.signal })
+      const result = await operations.forecast({ accountId: accountId.value }, { signal: controller.signal })
       if (version === requestVersion) {
         report.value = result
         return true
@@ -60,10 +62,16 @@ export function useAccountQuotaForecast(
     error.value = false
     try {
       // 刷新属于现有额度动作；预测查询本身始终只读。
-      const result = await refreshAccountQuota({ accountId: targetAccountId })
+      if (operations.refreshQuota) {
+        await operations.refreshQuota(targetAccountId)
+      }
+      else {
+        const result = await refreshAccountQuota({ accountId: targetAccountId })
+        if (!disposed)
+          onAccountUpdated(result.account)
+      }
       if (disposed)
         return
-      onAccountUpdated(result.account)
       if (accountId.value === targetAccountId && await load())
         toast.success('额度已刷新')
     }

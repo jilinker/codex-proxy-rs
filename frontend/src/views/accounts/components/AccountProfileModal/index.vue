@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AccountRow } from '../../constants'
+import type { AccountIdentityPresentation } from '../accountPresentation'
 import { RefreshCw, TriangleAlert } from '@lucide/vue'
 import { toRef } from 'vue'
 
@@ -14,7 +14,7 @@ import AccountProfileSkeleton from './Skeleton.vue'
 import AccountSubscription from './Subscription.vue'
 import AccountProfileTokenActivity from './TokenActivity.vue'
 
-const props = defineProps<{ account: AccountRow }>()
+const props = defineProps<{ account: AccountIdentityPresentation }>()
 const open = defineModel<boolean>({ required: true })
 const accountId = toRef(() => props.account.id)
 const { profile, subscription, loading, error, load } = useAccountPersonalInfo(accountId, open)
