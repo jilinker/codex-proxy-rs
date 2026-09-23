@@ -604,3 +604,31 @@ fn xai_profile_override_distinguishes_omission_from_explicit_inheritance() {
     payload["xaiClientProfileOverride"] = json!({"versionMode":"latest"});
     assert!(decode(payload).unwrap().is_some());
 }
+
+#[test]
+fn key_list_accepts_group_pages_and_rejects_ambiguous_pagination() {
+    let query = serde_json::from_value::<ListClientKeysQuery>(json!({
+        "groupId": "grp_11111111111111111111111111111111", "page": 2, "limit": 20, "search": " team "
+    }))
+    .unwrap()
+    .into_command()
+    .unwrap();
+    assert_eq!(
+        query.group_id.unwrap().as_str(),
+        "grp_11111111111111111111111111111111"
+    );
+    assert_eq!(query.page, Some(2));
+    assert_eq!(query.search.as_deref(), Some("team"));
+    for value in [
+        json!({"page": 0}),
+        json!({"page": 1, "cursor": "cursor"}),
+        json!({"groupId": " "}),
+    ] {
+        assert!(
+            serde_json::from_value::<ListClientKeysQuery>(value)
+                .unwrap()
+                .into_command()
+                .is_err()
+        );
+    }
+}

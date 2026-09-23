@@ -949,7 +949,7 @@ HTTP 请求头及新建 WS 的握手提示按当时的最终出站档位构造�
 | `POST` | `/api/admin/account-groups/enable` | `{ id }` | 启用 |
 | `POST` | `/api/admin/account-groups/disable` | `{ id }` | 禁用；已绑定 Key 保持受限，不回退到全部账号 |
 | `POST` | `/api/admin/account-groups/delete` | `{ id }` | 删除未被 Client Key 路由引用的组 授权关系随组删除 |
-| `GET` | `/api/admin/account-groups/key-authorizations` | `id` | 返回该组已授权 Key ID 数组 仅管理员可查询 |
+| `GET` | `/api/admin/account-groups/key-authorizations` | `id` | 返回仍绑定该组的已授权 Key ID 数组 用于分页勾选回显 仅管理员可查询 |
 | `POST` | `/api/admin/account-groups/key-authorizations` | `{ id, keyIds }` | 原子替换该组授权 Key 支持空数组撤销全部 拒绝重复或不存在的 Key 不改变路由绑定 |
 
 列表数据为 `{ items, page, configRevision }`，其中 item 返回 `memberCount`、按 Provider 聚合的
@@ -962,7 +962,7 @@ HTTP 请求头及新建 WS 的握手提示按当时的最终出站档位构造�
 
 | 方法 | 路由 | 主要 query/body | 说明 |
 | --- | --- | --- | --- |
-| `GET` | `/api/admin/client-keys` | `cursor`、`limit`、`search`、`sortBy`、`sortDirection` | 游标分页查询 |
+| `GET` | `/api/admin/client-keys` | `cursor`、`page`、`limit`、`groupId`、`search`、`sortBy`、`sortDirection` | 分页查询 可按绑定分组筛选 `page` 从 1 开始且不能与 `cursor` 同时使用 总数遵循相同筛选条件 |
 | `POST` | `/api/admin/client-keys/create` | 创建字段 | 创建带账号范围的 Client Key |
 | `GET` | `/api/admin/client-keys/reveal` | `id` | 显式读取完整明文 Key |
 | `POST` | `/api/admin/client-keys/update` | 更新字段 | 原子更新名称、分组范围和限额 |

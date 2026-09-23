@@ -236,6 +236,8 @@ impl ClientApiKeyCursor {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientApiKeyListQuery {
+    pub group_id: Option<AccountGroupId>,
+    pub page: Option<u32>,
     pub cursor: Option<ClientApiKeyCursor>,
     pub page_size: u16,
     pub search: Option<String>,
@@ -244,6 +246,11 @@ pub struct ClientApiKeyListQuery {
 
 impl ClientApiKeyListQuery {
     pub fn validate(&self) -> StoreResult<()> {
+        if self.page == Some(0) || (self.page.is_some() && self.cursor.is_some()) {
+            return Err(invalid(
+                "page must be positive and cannot be combined with cursor",
+            ));
+        }
         if self.page_size == 0 {
             return Err(invalid("page size must be between 1 and 65535"));
         }
@@ -363,7 +370,7 @@ impl ClientApiKeyRepository for PgClientApiKeyRepository {
         query: ClientApiKeyListQuery,
     ) -> StoreResult<ClientApiKeyPage> {
         query.validate()?;
-        let total = count_client_api_keys(&self.pool, query.search.as_deref()).await?;
+        let total = count_client_api_keys(&self.pool, &query).await?;
         let mut statement = QueryBuilder::<Postgres>::new(
             "select k.id, k.name, k.label, k.provider_request_profiles_json -> 'openai' as openai_client_profile_override,
                     k.provider_request_profiles_json -> 'xai' as xai_client_profile_override,
@@ -373,13 +380,17 @@ impl ClientApiKeyRepository for PgClientApiKeyRepository {
              from client_api_keys k
              where true",
         );
-        push_client_key_search(&mut statement, query.search.as_deref());
+        push_client_key_filter(&mut statement, &query);
         if let Some(cursor) = &query.cursor {
             push_client_key_cursor(&mut statement, cursor);
         }
         push_client_key_order(&mut statement, query.sort);
         statement.push(" limit ");
         statement.push_bind(i64::from(query.page_size) + 1);
+        if let Some(page) = query.page {
+            statement.push(" offset ");
+            statement.push_bind(i64::from(page - 1) * i64::from(query.page_size));
+        }
         let rows = statement
             .build()
             .fetch_all(&self.pool)
@@ -916,6 +927,8 @@ fn store_client_key_query(
 ) -> AdminStoreResult<ClientApiKeyListQuery> {
     let sort = store_client_key_sort(query.sort);
     Ok(ClientApiKeyListQuery {
+        group_id: query.group_id,
+        page: query.page,
         cursor: query
             .cursor
             .map(|cursor| store_client_key_cursor(cursor, sort))
@@ -1305,16 +1318,26 @@ fn client_record_from_row(row: &sqlx::postgres::PgRow) -> StoreResult<ClientApiK
     })
 }
 
-async fn count_client_api_keys(pool: &PgPool, search: Option<&str>) -> StoreResult<u64> {
+async fn count_client_api_keys(pool: &PgPool, query: &ClientApiKeyListQuery) -> StoreResult<u64> {
     let mut statement =
-        QueryBuilder::<Postgres>::new("select count(*)::bigint from client_api_keys where true");
-    push_client_key_search(&mut statement, search);
+        QueryBuilder::<Postgres>::new("select count(*)::bigint from client_api_keys k where true");
+    push_client_key_filter(&mut statement, query);
     let count = statement
         .build_query_scalar::<i64>()
         .fetch_one(pool)
         .await
         .map_err(|_| postgres_unavailable("count client API keys"))?;
     to_u64(count)
+}
+
+// 列表和总数共享分组条件 避免分页统计包含其他分组
+fn push_client_key_filter(statement: &mut QueryBuilder<Postgres>, query: &ClientApiKeyListQuery) {
+    if let Some(group_id) = &query.group_id {
+        statement.push(" and exists (select 1 from client_api_key_groups kg where kg.client_api_key_id = k.id and kg.account_group_id = ");
+        statement.push_bind(group_id.as_str().to_owned());
+        statement.push(")");
+    }
+    push_client_key_search(statement, query.search.as_deref());
 }
 
 fn push_client_key_search(statement: &mut QueryBuilder<Postgres>, search: Option<&str>) {

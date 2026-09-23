@@ -9,6 +9,7 @@ import BaseCheckbox from '@/components/base/BaseCheckbox.vue'
 import BaseEmpty from '@/components/base/BaseEmpty.vue'
 import BaseInput from '@/components/base/BaseInput.vue'
 import BaseModal from '@/components/base/BaseModal/index.vue'
+import BaseTablePagination from '@/components/base/BaseTable/BaseTablePagination.vue'
 import { defineTableColumns } from '@/components/base/BaseTable/columns'
 import BaseTable from '@/components/base/BaseTable/index.vue'
 import { toast } from '@/components/base/BaseToast'
@@ -26,7 +27,11 @@ const search = shallowRef('')
 const saving = shallowRef(false)
 const request = useRequestState()
 const { loading, error } = request
-const rows = computed(() => keys.value.filter(key => `${key.name} ${key.prefix}`.toLowerCase().includes(search.value.trim().toLowerCase())))
+const currentPage = shallowRef(1)
+const pageSize = shallowRef(20)
+const total = shallowRef(0)
+const pagination = computed(() => ({ currentPage: currentPage.value, pageSize: pageSize.value, total: total.value }))
+let selectionLoaded = false
 const columns = defineTableColumns<ApiKey>([
   { key: 'selection', kind: 'selection' },
   { key: 'name', label: 'Key 名称', kind: 'identity' },
@@ -46,25 +51,40 @@ async function load() {
     return
   const version = request.start()
   keys.value = []
-  selected.value = new Set()
   try {
-    const ids = await getGroupKeyAuthorizations(group.id, { signal: request.signal })
-    const items: ApiKey[] = []
-    let cursor: string | undefined
-    do {
-      const page = await getApiKeys({ limit: 200, cursor }, { signal: request.signal })
-      items.push(...page.items.filter(key => key.groups.some(item => item.id === group.id)))
-      cursor = page.nextCursor ?? undefined
-    } while (cursor && request.isCurrent(version))
+    const [page, ids] = await Promise.all([
+      getApiKeys({ groupId: group.id, page: currentPage.value, limit: pageSize.value, search: search.value.trim() || undefined }, { signal: request.signal }),
+      selectionLoaded ? Promise.resolve(null) : getGroupKeyAuthorizations(group.id, { signal: request.signal }),
+    ])
     if (request.isCurrent(version)) {
-      keys.value = items
-      const authorizedIds = new Set(ids)
-      selected.value = new Set(items.filter(key => authorizedIds.has(key.id)).map(key => key.id))
+      total.value = page.total
+      const lastPage = Math.max(1, Math.ceil(page.total / pageSize.value))
+      if (currentPage.value > lastPage) {
+        currentPage.value = lastPage
+        return load()
+      }
+      keys.value = page.items
+      if (ids !== null) {
+        selected.value = new Set(ids)
+        selectionLoaded = true
+      }
     }
   }
   catch (cause) { request.fail(version, cause) }
   finally { request.finish(version) }
 }
+function changePage(page: number) {
+  currentPage.value = page
+  void load()
+}
+function changePageSize(size: number) {
+  pageSize.value = size
+  changePage(1)
+}
+watch(search, () => {
+  if (props.group)
+    changePage(1)
+})
 async function save() {
   if (!props.group || loading.value || saving.value || error.value)
     return
@@ -82,6 +102,9 @@ watch(() => props.group?.id, () => {
   keys.value = []
   selected.value = new Set()
   search.value = ''
+  currentPage.value = 1
+  total.value = 0
+  selectionLoaded = false
   request.error.value = ''
   if (props.group)
     void load()
@@ -97,7 +120,7 @@ watch(() => props.group?.id, () => {
           授权后可查看组内账号完整信息，并使用个人信息、额度重置、刷新及预测
         </p>
       </div>
-      <BaseInput v-model="search" placeholder="搜索 Key 名称或前缀" :disabled="loading || saving">
+      <BaseInput v-model="search" placeholder="搜索 Key 名称或标签" :disabled="saving">
         <template #prefix>
           <Search class="size-4" />
         </template>
@@ -109,7 +132,7 @@ watch(() => props.group?.id, () => {
           </BaseButton>
         </template>
       </BaseEmpty>
-      <BaseTable v-else class="max-h-80 min-h-40" :columns="columns" :rows="rows" :loading="loading" empty-text="暂无匹配的 Key">
+      <BaseTable v-else class="max-h-80 min-h-40" :columns="columns" :rows="keys" :loading="loading" empty-text="暂无匹配的 Key">
         <template #selection="{ row }">
           <BaseCheckbox :model-value="selected.has(row.id)" :disabled="saving" :label="`授权 ${row.name}`" @update:model-value="toggle(row.id)" />
         </template>
@@ -123,6 +146,7 @@ watch(() => props.group?.id, () => {
           <span :class="row.enabled ? 'text-cp-success' : 'text-cp-text-quaternary'">{{ row.enabled ? '已启用' : '已禁用' }}</span>
         </template>
       </BaseTable>
+      <BaseTablePagination :pagination="pagination" :loading="loading || saving" @page-change="changePage" @page-size-change="changePageSize" />
       <span class="text-cp-sm text-cp-text-secondary" role="status">已选择 {{ selected.size }} 个 Key</span>
     </div>
     <template #footer>

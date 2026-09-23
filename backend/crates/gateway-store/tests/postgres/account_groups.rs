@@ -569,7 +569,7 @@ async fn authorizations_follow_enabled_groups_keys_and_members_without_changing_
             .account_group_key_authorizations(&group_id(MIXED_GROUP))
             .await
             .unwrap(),
-        vec![key.to_string()]
+        Vec::<String>::new()
     );
     groups
         .replace_account_group_key_authorizations(

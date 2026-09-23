@@ -51,6 +51,8 @@ fn parse_budget(
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ListClientKeysQuery {
+    group_id: Option<String>,
+    page: Option<u32>,
     cursor: Option<String>,
     limit: Option<u16>,
     search: Option<String>,
@@ -71,6 +73,14 @@ impl ListClientKeysQuery {
         if self.limit == Some(0) {
             return Err(WireValidationError::new("limit"));
         }
+        if self.page == Some(0) || (self.page.is_some() && self.cursor.is_some()) {
+            return Err(WireValidationError::new("page"));
+        }
+        let group_id = self
+            .group_id
+            .map(AccountGroupId::new)
+            .transpose()
+            .map_err(|_| WireValidationError::new("groupId"))?;
         let search = self.search.map(|search| search.trim().to_owned());
         if search.as_deref().is_some_and(|search| {
             search.len() > MAX_SEARCH_BYTES || search.chars().any(char::is_control)
@@ -91,6 +101,8 @@ impl ListClientKeysQuery {
         let page_size = ClientKeyPageSize::new(self.limit.unwrap_or(DEFAULT_PAGE_SIZE))
             .map_err(|_| WireValidationError::new("limit"))?;
         Ok(ClientKeyListQuery {
+            group_id,
+            page: self.page,
             cursor,
             page_size,
             search: search.filter(|search| !search.is_empty()),

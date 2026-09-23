@@ -158,6 +158,8 @@ async fn client_key_cursor_should_reject_value_that_does_not_match_sort() {
     let error = services
         .client_keys()
         .list(ClientKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: Some(ClientKeyCursor {
                 sort,
                 value: ClientKeyCursorValue::Enabled(true),
@@ -182,6 +184,8 @@ async fn client_key_list_should_forward_the_full_nonzero_u16_page_size() {
     let page = services
         .client_keys()
         .list(ClientKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: None,
             page_size: ClientKeyPageSize::new(u16::MAX).expect("maximum page size"),
             search: None,

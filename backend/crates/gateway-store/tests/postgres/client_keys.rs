@@ -283,6 +283,8 @@ async fn client_key_search_matches_names_and_labels_but_never_credential_values(
     ] {
         let page = repository
             .list_client_api_keys(ClientApiKeyListQuery {
+                group_id: None,
+                page: None,
                 cursor: None,
                 page_size: 10,
                 search: Some(search.to_owned()),
@@ -325,6 +327,8 @@ async fn client_key_list_uses_safe_keyset_search_and_filtered_total() {
     let repository = PgClientApiKeyRepository::new(database.pool.clone());
     let first = repository
         .list_client_api_keys(ClientApiKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: None,
             page_size: 2,
             search: None,
@@ -337,6 +341,8 @@ async fn client_key_list_uses_safe_keyset_search_and_filtered_total() {
     assert!(first.next_cursor.is_some());
     let second = repository
         .list_client_api_keys(ClientApiKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: first.next_cursor,
             page_size: 2,
             search: None,
@@ -349,6 +355,8 @@ async fn client_key_list_uses_safe_keyset_search_and_filtered_total() {
 
     let searched = repository
         .list_client_api_keys(ClientApiKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: None,
             page_size: 10,
             search: Some("needle".to_owned()),
@@ -367,6 +375,8 @@ fn client_key_cursor_is_bound_to_one_sort_contract() {
     let created_sort = ClientApiKeySort::default();
     assert!(
         ClientApiKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: None,
             page_size: u16::MAX,
             search: None,
@@ -382,6 +392,8 @@ fn client_key_cursor_is_bound_to_one_sort_contract() {
     )
     .expect("valid cursor");
     let query = ClientApiKeyListQuery {
+        group_id: None,
+        page: None,
         cursor: Some(cursor),
         page_size: 10,
         search: None,
@@ -408,6 +420,8 @@ async fn admin_client_key_adapter_should_preserve_the_full_nonzero_u16_page_size
     };
     let page = PgAdminClientKeyStore::new(database.pool.clone())
         .list_client_keys(AdminClientKeyListQuery {
+            group_id: None,
+            page: None,
             cursor: None,
             page_size: ClientKeyPageSize::new(u16::MAX).expect("maximum page size"),
             search: None,
@@ -512,6 +526,8 @@ async fn client_key_database_sort_is_stable_and_keeps_null_last_used_at_last() {
         loop {
             let page = repository
                 .list_client_api_keys(ClientApiKeyListQuery {
+                    group_id: None,
+                    page: None,
                     cursor,
                     page_size: 1,
                     search: None,
@@ -783,5 +799,107 @@ async fn key_profile_override_roundtrips_and_explicit_clear_restores_inheritance
         .await
         .unwrap();
     assert!(snapshot.client_api_keys[0].request_profiles.is_empty());
+    database.close().await;
+}
+
+#[tokio::test]
+async fn group_key_pages_filter_before_count_search_and_offset() {
+    use gateway_core::routing::AccountGroupId;
+    let Some(database) = TestDatabase::create("group_key_pages").await else {
+        return;
+    };
+    for id in [
+        "grp_11111111111111111111111111111111",
+        "grp_22222222222222222222222222222222",
+    ] {
+        sqlx::query("insert into account_groups (id, name, color, created_at, updated_at) values ($1, $1, '#2563EBFF', now(), now())")
+            .bind(id).execute(&database.pool).await.unwrap();
+    }
+    for (id, name, groups) in [
+        (
+            "key_a",
+            "Team A",
+            vec!["grp_11111111111111111111111111111111"],
+        ),
+        (
+            "key_b",
+            "Team B",
+            vec![
+                "grp_11111111111111111111111111111111",
+                "grp_22222222222222222222222222222222",
+            ],
+        ),
+        (
+            "key_c",
+            "Team C",
+            vec!["grp_22222222222222222222222222222222"],
+        ),
+        ("key_d", "Team D", vec![]),
+    ] {
+        sqlx::query("insert into client_api_keys (id, name, key, created_at, updated_at) values ($1, $2, $1, now(), now())")
+            .bind(id).bind(name).execute(&database.pool).await.unwrap();
+        for group in groups {
+            sqlx::query("insert into client_api_key_groups (client_api_key_id, account_group_id, created_at) values ($1, $2, now())")
+                .bind(id).bind(group).execute(&database.pool).await.unwrap();
+        }
+    }
+    sqlx::query("insert into account_group_key_authorizations (account_group_id, client_api_key_id, created_at) values ('grp_11111111111111111111111111111111', 'key_a', now()), ('grp_11111111111111111111111111111111', 'key_c', now())")
+        .execute(&database.pool).await.unwrap();
+    let groups = gateway_store::postgres::PgAccountGroupRepository::new(database.pool.clone());
+    let ids = gateway_admin::ports::store::AccountGroupStore::account_group_key_authorizations(
+        &groups,
+        &AccountGroupId::new("grp_11111111111111111111111111111111").unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids, vec!["key_a"]);
+    let repository = PgClientApiKeyRepository::new(database.pool.clone());
+    let query = ClientApiKeyListQuery {
+        group_id: Some(AccountGroupId::new("grp_11111111111111111111111111111111").unwrap()),
+        page: Some(1),
+        cursor: None,
+        page_size: 1,
+        search: None,
+        sort: ClientApiKeySort {
+            field: ClientApiKeySortField::Name,
+            direction: ClientApiKeySortDirection::Asc,
+        },
+    };
+    let first = repository
+        .list_client_api_keys(query.clone())
+        .await
+        .unwrap();
+    assert_eq!(first.total, 2);
+    assert_eq!(first.items[0].id, "key_a");
+    let second = repository
+        .list_client_api_keys(ClientApiKeyListQuery {
+            page: Some(2),
+            ..query.clone()
+        })
+        .await
+        .unwrap();
+    assert_eq!(second.total, 2);
+    assert_eq!(second.items[0].id, "key_b");
+    assert!(second.next_cursor.is_none());
+    let beyond = repository
+        .list_client_api_keys(ClientApiKeyListQuery {
+            page: Some(3),
+            ..query.clone()
+        })
+        .await
+        .unwrap();
+    assert!(beyond.items.is_empty());
+    assert_eq!(beyond.total, 2);
+    for (search, total) in [("Team B", 1), ("Team C", 0), ("Team D", 0)] {
+        let page = repository
+            .list_client_api_keys(ClientApiKeyListQuery {
+                search: Some(search.to_owned()),
+                ..query.clone()
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.total, total);
+        assert_eq!(page.items.len() as u64, total);
+    }
     database.close().await;
 }

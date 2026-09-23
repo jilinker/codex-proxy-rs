@@ -240,6 +240,9 @@ fn map_client_key_write_error(error: AdminStoreError) -> AdminError {
 }
 
 fn validate_cursor(query: &ClientKeyListQuery) -> Result<(), AdminError> {
+    if query.page == Some(0) || (query.page.is_some() && query.cursor.is_some()) {
+        return Err(AdminError::invalid("页码必须大于零且不能与游标同时使用"));
+    }
     let Some(cursor) = &query.cursor else {
         return Ok(());
     };

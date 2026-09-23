@@ -131,8 +131,10 @@ impl AccountGroupStore for PgAccountGroupRepository {
     ) -> AdminStoreResult<Vec<String>> {
         self.required_record(id).await?;
         sqlx::query_scalar(
-            "select client_api_key_id from account_group_key_authorizations
-             where account_group_id = $1 order by client_api_key_id",
+            "select a.client_api_key_id from account_group_key_authorizations a
+             join client_api_key_groups kg on kg.client_api_key_id = a.client_api_key_id
+               and kg.account_group_id = a.account_group_id
+             where a.account_group_id = $1 order by a.client_api_key_id",
         )
         .bind(id.as_str())
         .fetch_all(&self.pool)

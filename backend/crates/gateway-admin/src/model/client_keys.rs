@@ -77,6 +77,8 @@ pub struct ClientKeyCursor {
 /// Client Key 列表查询。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientKeyListQuery {
+    pub group_id: Option<AccountGroupId>,
+    pub page: Option<u32>,
     pub cursor: Option<ClientKeyCursor>,
     pub page_size: ClientKeyPageSize,
     pub search: Option<String>,
