@@ -855,6 +855,10 @@ fn valid_installation_id(value: &str) -> bool {
 pub(crate) fn oauth_owner_ref(owner: &AuthorizationOwner) -> String {
     let mut digest = Sha256::new();
     match owner {
+        AuthorizationOwner::ClientKey { client_key_id } => {
+            digest.update(b"client-key\0");
+            digest.update(client_key_id.as_bytes());
+        }
         AuthorizationOwner::AdminSession { admin_user_id } => {
             digest.update(b"admin-session\0");
             digest.update(admin_user_id.as_bytes());
