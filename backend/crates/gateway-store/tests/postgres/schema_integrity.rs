@@ -152,3 +152,161 @@ async fn backup_completion_cannot_precede_its_start() {
     assert_check_rejected(&error);
     db.close().await;
 }
+
+// 只构造公开测试标识 不包含真实 Key 或账号信息
+async fn seed_account_authorization_subjects(pool: &sqlx::PgPool) {
+    sqlx::raw_sql(
+        "insert into account_groups (id, name, color, created_at, updated_at) values
+           ('grp_000000000000000000000000000000a1', 'Authorization A', '#2563EBFF', now(), now()),
+           ('grp_000000000000000000000000000000a2', 'Authorization B', '#2563EBFF', now(), now());
+         insert into client_api_keys (id, name, key, created_at, updated_at) values
+           ('key_grant_a', 'Grant A', 'sk_schema_grant_a', now(), now()),
+           ('key_grant_b', 'Grant B', 'sk_schema_grant_b', now(), now());
+         insert into client_api_key_groups (client_api_key_id, account_group_id, created_at)
+           values ('key_grant_a', 'grp_000000000000000000000000000000a1', now());",
+    )
+    .execute(pool)
+    .await
+    .expect("seed independent routing and authorization subjects");
+}
+
+// 路由绑定升级后保持原样且不会隐式获得账号操作权限
+#[tokio::test]
+async fn account_authorization_migration_preserves_routing_without_implicit_grants() {
+    let Some(db) = TestDatabase::create_through("account_grant_upgrade", 16).await else {
+        return;
+    };
+    seed_account_authorization_subjects(&db.pool).await;
+    super::TEST_MIGRATOR
+        .run(&db.pool)
+        .await
+        .expect("upgrade existing schema with routing data");
+    let count: i64 = sqlx::query_scalar("select count(*) from account_group_key_authorizations")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    let bindings: Vec<(String, String)> =
+        sqlx::query_as("select client_api_key_id, account_group_id from client_api_key_groups")
+            .fetch_all(&db.pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        bindings,
+        vec![(
+            "key_grant_a".to_owned(),
+            "grp_000000000000000000000000000000a1".to_owned()
+        )]
+    );
+    super::TEST_MIGRATOR
+        .run(&db.pool)
+        .await
+        .expect("restart with applied migrations");
+    db.close().await;
+}
+
+// 联合主键和外键保护授权关系并允许独立于路由的多对多授权
+#[tokio::test]
+async fn account_authorizations_enforce_unique_pairs_and_existing_subjects() {
+    let Some(db) = TestDatabase::create("account_grant_constraints").await else {
+        return;
+    };
+    seed_account_authorization_subjects(&db.pool).await;
+    sqlx::query(
+        "insert into account_group_key_authorizations (account_group_id, client_api_key_id, created_at)
+         select g.id, k.id, now() from account_groups g cross join client_api_keys k",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("grant each group to multiple keys without routing prerequisites");
+    for (group, key, code) in [
+        (
+            "grp_000000000000000000000000000000a1",
+            "key_grant_a",
+            "23505",
+        ),
+        (
+            "grp_000000000000000000000000000000ff",
+            "key_grant_a",
+            "23503",
+        ),
+        (
+            "grp_000000000000000000000000000000a1",
+            "key_missing",
+            "23503",
+        ),
+    ] {
+        let error = sqlx::query(
+            "insert into account_group_key_authorizations (account_group_id, client_api_key_id, created_at)
+             values ($1, $2, now())",
+        )
+        .bind(group)
+        .bind(key)
+        .execute(&db.pool)
+        .await
+        .expect_err("reject duplicate or orphan authorization");
+        assert_eq!(
+            error
+                .as_database_error()
+                .and_then(|error| error.code())
+                .as_deref(),
+            Some(code)
+        );
+    }
+    let counts: (i64, i64) = sqlx::query_as(
+        "select (select count(*) from account_group_key_authorizations),
+                (select count(*) from client_api_key_groups)",
+    )
+    .fetch_one(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(counts, (4, 1));
+    db.close().await;
+}
+
+// 授权随主体删除清理 既有路由分组的删除保护继续生效
+#[tokio::test]
+async fn account_authorizations_cascade_without_weakening_routing_references() {
+    let Some(db) = TestDatabase::create("account_grant_delete").await else {
+        return;
+    };
+    seed_account_authorization_subjects(&db.pool).await;
+    sqlx::query(
+        "insert into account_group_key_authorizations (account_group_id, client_api_key_id, created_at)
+         select g.id, k.id, now() from account_groups g cross join client_api_keys k",
+    ).execute(&db.pool).await.unwrap();
+    let error =
+        sqlx::query("delete from account_groups where id = 'grp_000000000000000000000000000000a1'")
+            .execute(&db.pool)
+            .await
+            .expect_err("routing-bound group remains protected");
+    assert_eq!(
+        error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref(),
+        Some("23001")
+    );
+    sqlx::query("delete from account_groups where id = 'grp_000000000000000000000000000000a2'")
+        .execute(&db.pool)
+        .await
+        .expect("delete grant-only group");
+    sqlx::query("delete from client_api_keys where id = 'key_grant_b'")
+        .execute(&db.pool)
+        .await
+        .expect("delete authorized key");
+    let remaining: Vec<(String, String)> = sqlx::query_as(
+        "select account_group_id, client_api_key_id from account_group_key_authorizations",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        remaining,
+        vec![(
+            "grp_000000000000000000000000000000a1".to_owned(),
+            "key_grant_a".to_owned()
+        )]
+    );
+    db.close().await;
+}
