@@ -10,7 +10,7 @@ import AccountResetCredits from './ResetCredits.vue'
 defineProps<{ account: AccountRow, refreshing: boolean }>()
 const emit = defineEmits<{
   refreshQuota: [accountId: string]
-  accountUpdated: [account: AccountRow]
+  quotaReset: [accountId: string]
 }>()
 const profileOpen = shallowRef(false)
 </script>
@@ -32,7 +32,7 @@ const profileOpen = shallowRef(false)
         <AccountResetCredits
           v-if="account.provider === 'openai' && account.authenticationKind === 'oauth'"
           :account="account"
-          @account-updated="emit('accountUpdated', $event)"
+          @consumed="emit('quotaReset', $event)"
         />
         <BaseIconButton
           variant="ghost"

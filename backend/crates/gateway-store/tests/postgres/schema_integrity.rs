@@ -173,7 +173,7 @@ async fn seed_account_authorization_subjects(pool: &sqlx::PgPool) {
 // 路由绑定升级后保持原样且不会隐式获得账号操作权限
 #[tokio::test]
 async fn account_authorization_migration_preserves_routing_without_implicit_grants() {
-    let Some(db) = TestDatabase::create_through("account_grant_upgrade", 16).await else {
+    let Some(db) = TestDatabase::create_through("account_grant_upgrade", 17).await else {
         return;
     };
     seed_account_authorization_subjects(&db.pool).await;

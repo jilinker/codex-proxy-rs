@@ -738,7 +738,7 @@ impl AccountGroupStore for MemoryAccountGroupStore {
                     last_error_reason: None,
                     last_error_message: None,
                 },
-                total_slots: 1,
+                total_slots: Some(1),
             },
             AccountGroupMemberFact {
                 group_id: group_id(PRIMARY_GROUP_ID),
@@ -752,7 +752,7 @@ impl AccountGroupStore for MemoryAccountGroupStore {
                     last_error_reason: None,
                     last_error_message: None,
                 },
-                total_slots: 1,
+                total_slots: Some(1),
             },
         ])
     }
@@ -1537,7 +1537,7 @@ fn group_color(value: &str) -> AccountGroupColor {
 fn capacity(used_slots: Option<u64>, total_slots: u64) -> AccountGroupCapacity {
     AccountGroupCapacity {
         used_slots,
-        total_slots,
+        total_slots: Some(total_slots),
     }
 }
 
