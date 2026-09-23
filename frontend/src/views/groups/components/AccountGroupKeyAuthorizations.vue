@@ -53,12 +53,13 @@ async function load() {
     let cursor: string | undefined
     do {
       const page = await getApiKeys({ limit: 200, cursor }, { signal: request.signal })
-      items.push(...page.items)
+      items.push(...page.items.filter(key => key.groups.some(item => item.id === group.id)))
       cursor = page.nextCursor ?? undefined
     } while (cursor && request.isCurrent(version))
     if (request.isCurrent(version)) {
       keys.value = items
-      selected.value = new Set(ids)
+      const authorizedIds = new Set(ids)
+      selected.value = new Set(items.filter(key => authorizedIds.has(key.id)).map(key => key.id))
     }
   }
   catch (cause) { request.fail(version, cause) }
