@@ -113,34 +113,24 @@ impl ClientKeyService for DefaultClientKeyService {
         context: &MutationContext,
         command: CreateClientKey,
     ) -> Result<CreatedClientKey, AdminError> {
-        for (provider, profile) in [
-            ("openai", &command.openai_client_profile_override),
-            ("xai", &command.xai_client_profile_override),
-        ] {
-            if let Some(profile) = profile {
-                let kind = gateway_core::routing::ProviderKind::new(provider)
-                    .map_err(|_| AdminError::invalid("Provider 不合法"))?;
-                self.providers
-                    .require(&kind)
-                    .and_then(|provider| provider.preview_client_profile(profile))
-                    .map_err(|error| super::map_provider_error(error, "client profile"))?;
-            }
+        for (provider, profile) in &command.request_profile_overrides {
+            self.providers
+                .require(provider)
+                .and_then(|provider| provider.preview_client_profile(profile))
+                .map_err(|error| super::map_provider_error(error, "client profile"))?;
         }
         let id = ClientApiKeyId::new(format!("key_{}", Uuid::now_v7().simple()))
             .map_err(|_| AdminError::internal("创建 Client API Key ID 失败"))?;
         let plaintext = if let Some(key) = command.custom_key {
             key.expose_for_auth().to_owned()
         } else {
-            let mut bytes = [0_u8; 32];
-            OsRng.fill_bytes(&mut bytes);
-            format!("sk_{}", URL_SAFE_NO_PAD.encode(bytes))
+            generate_key()
         };
         let (config_revision, record) = self
             .store
             .create_client_key(
                 NewClientKey {
-                    openai_client_profile_override: command.openai_client_profile_override,
-                    xai_client_profile_override: command.xai_client_profile_override,
+                    request_profile_overrides: command.request_profile_overrides,
                     id,
                     name: command.name,
                     label: command.label,
@@ -165,15 +155,10 @@ impl ClientKeyService for DefaultClientKeyService {
         context: &MutationContext,
         command: UpdateClientKey,
     ) -> Result<ClientKeyMutation, AdminError> {
-        for (provider, profile) in [
-            ("openai", &command.openai_client_profile_override),
-            ("xai", &command.xai_client_profile_override),
-        ] {
-            if let Some(Some(profile)) = profile {
-                let kind = gateway_core::routing::ProviderKind::new(provider)
-                    .map_err(|_| AdminError::invalid("Provider 不合法"))?;
+        for (provider, profile) in &command.request_profile_override_updates {
+            if let Some(profile) = profile {
                 self.providers
-                    .require(&kind)
+                    .require(provider)
                     .and_then(|provider| provider.preview_client_profile(profile))
                     .map_err(|error| super::map_provider_error(error, "client profile"))?;
             }
@@ -269,4 +254,11 @@ fn validate_cursor(query: &ClientKeyListQuery) -> Result<(), AdminError> {
     } else {
         Err(AdminError::invalid("Client API Key 游标不合法"))
     }
+}
+
+// 原生与插件创建共用相同的密钥生成规则。
+pub(super) fn generate_key() -> String {
+    let mut bytes = [0_u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    format!("sk_{}", URL_SAFE_NO_PAD.encode(bytes))
 }
