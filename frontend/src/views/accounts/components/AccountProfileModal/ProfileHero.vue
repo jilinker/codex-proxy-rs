@@ -16,7 +16,7 @@ const props = defineProps<{
 const operations = useAccountOperations()
 const imageFailed = shallowRef(false)
 const displayName = computed(
-  () => props.profile?.displayName || props.profile?.username || props.account.email || props.account.name || 'Codex 用户',
+  () => props.profile?.displayName || props.profile?.username || props.account.email || props.account.name || '账号用户',
 )
 const username = computed(() => (props.profile?.username ? `@${props.profile?.username.replace(/^@/, '')}` : null))
 const accountIdentity = computed(() => props.account.email?.trim() || props.account.accountId?.trim())
@@ -26,7 +26,8 @@ const avatarToneClass = computed(() =>
 )
 const avatarUrl = computed(() => {
   const sourceUrl = props.profile?.imageUrl?.trim()
-  return sourceUrl ? operations.avatarUrl(props.account.id, sourceUrl) : null
+  const canLoadAvatar = props.account.capabilities.avatar ?? props.account.capabilities.personalInfo ?? false
+  return canLoadAvatar && sourceUrl ? operations.avatarUrl(props.account.id, sourceUrl) : null
 })
 watch(
   avatarUrl,

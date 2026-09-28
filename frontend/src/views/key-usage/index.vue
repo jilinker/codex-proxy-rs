@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { KeyUsageVersion } from '@/api/modules/key-usage'
+import { BaseInput, BaseScrollbar, BaseSegmented } from '@codex-proxy/ui'
 import { Search } from '@lucide/vue'
 import { computed, shallowRef } from 'vue'
+import { getKeyUsageVersion } from '@/api/modules/key-usage'
 import ApiKeyConfigModal from '@/components/ApiKeyConfigModal.vue'
-import BaseInput from '@/components/base/BaseInput.vue'
-import BaseScrollbar from '@/components/base/BaseScrollbar.vue'
-import BaseSegmented from '@/components/base/BaseSegmented.vue'
+import AppAboutModal from '@/components/AppAboutModal.vue'
 import RequestHealthTimelineCard from '@/views/dashboard/components/RequestHealthTimelineCard.vue'
 import KeyUsageAccounts from './components/KeyUsageAccounts.vue'
 import KeyUsageBudget from './components/KeyUsageBudget.vue'
@@ -34,13 +35,32 @@ function refreshActiveTab() {
 }
 
 const { showConfig, configKey, configuring, apiBaseUrl, openConfig, copyConfig } = useKeyConfig()
+const aboutOpen = shallowRef(false)
+const version = shallowRef<KeyUsageVersion | null>(null)
+const versionLoading = shallowRef(false)
+
+async function openAbout() {
+  aboutOpen.value = true
+  if (version.value || versionLoading.value)
+    return
+  versionLoading.value = true
+  try {
+    version.value = await getKeyUsageVersion({ silent: true })
+  }
+  catch {
+    // 版本不可用不影响查看项目信息，下次打开时重试。
+  }
+  finally {
+    versionLoading.value = false
+  }
+}
 </script>
 
 <template>
   <main class="h-dvh overflow-hidden bg-cp-bg-layout text-cp-text">
     <BaseScrollbar>
       <div class="mx-auto flex min-h-full w-full max-w-480 flex-col gap-5 p-4 min-[961px]:p-6">
-        <KeyUsageHeader v-model:period="period" v-model:refresh-interval="refreshInterval" :name="overview?.key.name" :prefix="overview?.key.prefix" :refreshing="statsActive ? refreshing || overviewLoading : accountsLoading" :show-stats-controls="statsActive" :configuring="configuring" @refresh="refreshActiveTab" @configure="openConfig" />
+        <KeyUsageHeader v-model:period="period" v-model:refresh-interval="refreshInterval" :name="overview?.key.name" :prefix="overview?.key.prefix" :refreshing="statsActive ? refreshing || overviewLoading : accountsLoading" :show-stats-controls="statsActive" :configuring="configuring" @refresh="refreshActiveTab" @configure="openConfig" @open-about="openAbout" />
         <BaseSegmented v-model="activeTab" class="self-start" label="Key 用量视图" :options="[{ label: '使用统计', value: 'stats' }, { label: '账号用量', value: 'accounts' }]" />
         <div v-if="statsActive" class="flex flex-wrap items-center justify-between gap-3">
           <span v-if="overview" class="text-cp-sm text-cp-text-tertiary">更新于 {{ keyUsageTime(overview.asOf).slice(11) }}</span>
@@ -67,5 +87,6 @@ const { showConfig, configKey, configuring, apiBaseUrl, openConfig, copyConfig }
       </div>
     </BaseScrollbar>
     <ApiKeyConfigModal v-model="showConfig" title="密钥配置" :api-key="configKey" :api-base-url="apiBaseUrl" @copy="copyConfig" />
+    <AppAboutModal v-model="aboutOpen" :version="version" />
   </main>
 </template>

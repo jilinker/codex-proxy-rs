@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { AccountQuotaPresentation } from '../accountPresentation'
+import { BaseEmpty } from '@codex-proxy/ui'
 import { computed } from 'vue'
-import BaseEmpty from '@/components/base/BaseEmpty.vue'
+import { formatProviderLabel } from '@/utils/providers'
 import { groupedAccountQuotaWindows, orderedPanelQuotaWindows } from '../../constants'
 import AccountPlanBadge from '../AccountPlanBadge.vue'
 import AccountQuotaPanelEntry from './Entry.vue'
 
 const props = defineProps<{ account: AccountQuotaPresentation }>()
+const supportsQuota = computed(() => props.account.capabilities?.quota ?? (props.account.quota.availability !== undefined && props.account.quota.availability !== 'unsupported'))
 const quotaEntries = computed(() => groupedAccountQuotaWindows(
   orderedPanelQuotaWindows(props.account.quota.windows),
 ))
@@ -20,11 +22,11 @@ const quotaEntries = computed(() => groupedAccountQuotaWindows(
           账号额度
         </h3>
         <p
-          v-if="account.authenticationKind !== 'api_key'"
+          v-if="supportsQuota || quotaEntries.length > 0"
           class="m-0 mt-1 flex min-w-0 items-center gap-1.5 text-cp-xs font-emphasis text-cp-text-secondary"
         >
-          <span>{{ account.provider === 'xai' ? 'xAI 用量窗口' : 'Codex 额度' }}</span>
-          <template v-if="account.provider === 'openai' && account.authenticationKind === 'oauth'">
+          <span>{{ formatProviderLabel(account.provider) }} 额度</span>
+          <template v-if="account.planType">
             <span>·</span>
             <AccountPlanBadge :plan-type="account.planType" :plan-type-display="account.planTypeDisplay" size="sm" />
           </template>
@@ -35,7 +37,7 @@ const quotaEntries = computed(() => groupedAccountQuotaWindows(
       <slot name="actions" />
     </div>
 
-    <div v-if="account.authenticationKind === 'api_key'" class="grid flex-1 place-items-center">
+    <div v-if="!supportsQuota && quotaEntries.length === 0" class="grid flex-1 place-items-center">
       <BaseEmpty title="暂不支持查询上游额度" surface="none" />
     </div>
     <div v-else class="grid min-h-0 gap-3">

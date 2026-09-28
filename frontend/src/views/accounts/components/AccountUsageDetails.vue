@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import type { AccountUsagePresentation } from './accountPresentation'
 
+import { BaseTable, defineTableColumns } from '@codex-proxy/ui'
 import { Sigma } from '@lucide/vue'
 import { computed } from 'vue'
-import { defineTableColumns } from '@/components/base/BaseTable/columns'
-import BaseTable from '@/components/base/BaseTable/index.vue'
 import { modelSuccessRateTextClass } from '../constants'
 
 const props = defineProps<{

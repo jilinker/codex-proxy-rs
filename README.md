@@ -78,7 +78,7 @@ INSTALL_DIR="$HOME/services/codex-proxy-rs" bash install.sh
 ### 登录管理端
 
 部署完成后，打开 `http://127.0.0.1:8080`，使用 `admin@cpr.local` 和管理员密码登录。
-API Key 持有者可在同一登录页切换登录身份，进入 `/key-usage` 查看自己的用量、趋势、请求日志、额度、健康时间线，以及当前 Key 已启用分组内账号的只读额度与 Token 用量；账号视图不展示费用，也不能修改账号；Key 持有者不能访问管理员页面。
+API Key 持有者可在同一登录页切换登录身份，进入 `/key-usage` 查看自己的用量、趋势、请求日志、额度、健康时间线，以及当前 Key 已启用路由分组与已启用授权分组内账号的只读额度与 Token 用量；管理员显式授权的分组成员还可按权限查看资料、刷新额度或使用重置卡。账号视图不展示费用，Key 持有者不能访问管理员页面。
 页面右上角的「密钥配置」支持复制 Codex 配置文件和导入 CCSwitch，导入时同时启用当前 Key 的日／周额度查询，默认刷新间隔为 30 分钟
 
 默认地址只能在服务器本机访问，从其他设备使用时，需要配置
@@ -102,7 +102,7 @@ API Key 持有者可在同一登录页切换登录身份，进入 `/key-usage` �
 | Base URL | `http://127.0.0.1:8080/v1`；远程接入使用服务器的 HTTPS 地址 |
 | API Key | 管理端创建的客户端密钥 |
 
-可用模型以该密钥查询到的模型列表为准：
+查询该密钥可见的模型目录：
 
 ```bash
 curl http://127.0.0.1:8080/v1/models \
@@ -111,14 +111,13 @@ curl http://127.0.0.1:8080/v1/models \
 
 ## 文档
 
-- [客户端接入与生图](deploy/README.md#客户端配置)
-- [部署、备份与恢复](deploy/README.md)
-- [API 参考](docs/api.md)
-- [模型定价与手动同步](docs/api.md#模型定价)
-- [系统架构](docs/architecture.md)
-- [管理端主题](docs/theme.md)
-- [数据库迁移](backend/migrations/README.md)
-- [贡献与审查](CONTRIBUTING.md)
+| 任务 | 文档 |
+| --- | --- |
+| 部署与使用 | [部署、备份与恢复](deploy/README.md) · [客户端接入与生图](deploy/README.md#客户端配置) |
+| 接口集成 | [API 参考](docs/api.md) · [模型定价](docs/api.md#模型定价) |
+| 使用插件 | [安装、配置与使用](docs/plugins.md) |
+| 开发插件 | [SDK 与合同](backend/crates/gateway-plugin/sdk/README.md) · [打包工具](backend/apps/plugin-cli/README.md) |
+| 开发宿主 | [贡献与验证](CONTRIBUTING.md) · [源码联调](docs/development.md) · [系统架构](docs/architecture.md) · [管理端主题](docs/theme.md) · [数据库迁移](backend/migrations/README.md) |
 
 ## 社区
 

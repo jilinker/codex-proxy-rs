@@ -1,13 +1,15 @@
-import type { Account, AccountModelUsage, AccountQuota, AccountUsage } from '@/api/modules/accounts'
+import type { Account, AccountCapabilities, AccountModelUsage, AccountQuota, AccountUsage } from '@/api/modules/accounts'
 
 // 两种身份共用的只读展示数据
 export type AccountQuotaPresentation = Pick<Account, 'provider' | 'authenticationKind' | 'planType' | 'planTypeDisplay'> & {
+  capabilities?: Partial<AccountCapabilities>
   quota: Pick<AccountQuota, 'windows' | 'refreshedAtDisplay'> & { availability?: string }
 }
 
 export type AccountRecentModel = Pick<AccountModelUsage, 'model' | 'lastUsedAt'>
 
 export type AccountSummaryPresentation = Pick<Account, 'authenticationKind'> & {
+  capacity?: Account['capacity']
   quota: Pick<AccountQuota, 'windows'>
   usage: Pick<AccountUsage, 'requestCount' | 'totalTokensDisplay' | 'windowLabelDisplay'> & {
     models?: AccountRecentModel[]
@@ -23,4 +25,13 @@ export type AccountUsagePresentation = Pick<AccountUsage, 'windowLabelDisplay' |
     | 'totalTokensDisplay' | 'lastUsedAtDisplay'> & Partial<Pick<AccountModelUsage, 'billingAmountUsdDisplay'>>)[]
   }
 
-export type AccountIdentityPresentation = Pick<Account, 'id' | 'provider' | 'authenticationKind' | 'email' | 'planType' | 'planTypeDisplay'> & { name?: string | null, accountId?: string | null }
+// 管理端账号和 Key 用量页账号共享展示组件，但两者返回的能力字段并不完全相同
+export type AccountIdentityPresentation = Pick<Account, 'id' | 'provider' | 'authenticationKind' | 'email' | 'planType' | 'planTypeDisplay'> & {
+  name?: string | null
+  accountId?: string | null
+  capabilities: Partial<AccountCapabilities> & {
+    personalInfo?: boolean
+    quotaForecast?: boolean
+    fullIdentity?: boolean
+  }
+}

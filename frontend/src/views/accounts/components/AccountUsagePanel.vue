@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { AccountRow } from '../constants'
 import type { AccountIdentityPresentation, AccountUsagePresentation } from './accountPresentation'
+import { BaseIconButton } from '@codex-proxy/ui'
 import { ChartNoAxesCombined } from '@lucide/vue'
 import { ref } from 'vue'
-import BaseIconButton from '@/components/base/BaseIconButton.vue'
 import AccountQuotaForecastModal from './AccountQuotaForecastModal/index.vue'
 import AccountUsageDetails from './AccountUsageDetails.vue'
 

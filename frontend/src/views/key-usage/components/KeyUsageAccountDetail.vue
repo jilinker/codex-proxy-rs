@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import type { KeyUsageAccountDetail } from '@/api/modules/key-usage'
+import { BaseButton, BaseSkeleton } from '@codex-proxy/ui'
 import { provide, shallowRef, watch } from 'vue'
 import { consumeKeyAccountResetCredit, getKeyAccountForecast, getKeyAccountPersonalInfo, getKeyAccountResetCredits, getKeyUsageAccountDetail, keyAccountAvatarUrl, refreshKeyAccountQuota } from '@/api/modules/key-usage'
 import { ApiError } from '@/api/request'
-import BaseButton from '@/components/base/BaseButton.vue'
-import BaseSkeleton from '@/components/base/BaseSkeleton.vue'
 import { useRequestState } from '@/composables/useRequestState'
 import AccountExpandedPanels from '@/views/accounts/components/AccountExpandedPanels.vue'
 import AccountQuotaPanel from '@/views/accounts/components/AccountQuotaPanel/index.vue'

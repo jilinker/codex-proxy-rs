@@ -1,11 +1,8 @@
 <script setup lang="ts">
 import type { AccountIdentityPresentation } from '../accountPresentation'
+import { BaseButton, BaseEmpty, BaseModal, BaseSkeleton } from '@codex-proxy/ui'
 import { RefreshCw, TriangleAlert } from '@lucide/vue'
 import { toRef } from 'vue'
-
-import BaseButton from '@/components/base/BaseButton.vue'
-import BaseEmpty from '@/components/base/BaseEmpty.vue'
-import BaseModal from '@/components/base/BaseModal/index.vue'
 import { useAccountPersonalInfo } from '../../composables/useAccountPersonalInfo'
 import AccountProfileActivityInsights from './ActivityInsights.vue'
 import AccountProfileMetrics from './Metrics.vue'
@@ -17,15 +14,21 @@ import AccountProfileTokenActivity from './TokenActivity.vue'
 const props = defineProps<{ account: AccountIdentityPresentation }>()
 const open = defineModel<boolean>({ required: true })
 const accountId = toRef(() => props.account.id)
-const { profile, subscription, loading, error, load } = useAccountPersonalInfo(accountId, open)
+const canLoadProfile = toRef(() => props.account.capabilities.profile ?? props.account.capabilities.personalInfo ?? false)
+const canLoadSubscription = toRef(() => props.account.capabilities.subscription ?? props.account.capabilities.personalInfo ?? false)
+const { profile, subscription, loading, error, load } = useAccountPersonalInfo({
+  accountId,
+  open,
+  capabilities: { profile: canLoadProfile, subscription: canLoadSubscription },
+})
 </script>
 
 <template>
   <BaseModal v-model="open" title="个人信息" size="xl">
     <div class="flex min-h-0 min-w-0 flex-col gap-6 pb-2">
-      <div class="grid min-w-0 grid-cols-1 gap-4 rounded-cp-lg bg-cp-fill-alter p-4 sm:p-5 lg:grid-cols-[minmax(310px,1.05fr)_minmax(0,1.95fr)] lg:items-center">
+      <div class="grid min-w-0 grid-cols-1 gap-4 rounded-cp-lg bg-cp-fill-alter p-4 sm:p-5 lg:items-center" :class="canLoadProfile ? 'lg:grid-cols-[minmax(310px,1.05fr)_minmax(0,1.95fr)]' : undefined">
         <AccountProfileHero :account="account" :profile="profile" />
-        <AccountProfileMetrics :profile="profile" :loading="loading" />
+        <AccountProfileMetrics v-if="canLoadProfile" :profile="profile" :loading="loading" />
       </div>
 
       <section v-if="subscription" class="grid min-w-0 grid-cols-1 gap-4" aria-labelledby="profile-subscription-title">
@@ -35,10 +38,16 @@ const { profile, subscription, loading, error, load } = useAccountPersonalInfo(a
         <AccountSubscription :subscription="subscription" />
       </section>
 
-      <AccountProfileSkeleton v-if="loading && !profile" />
+      <template v-if="loading && !profile">
+        <AccountProfileSkeleton v-if="canLoadProfile" />
+        <div v-else role="status" aria-busy="true">
+          <span class="sr-only">正在加载订阅信息</span>
+          <BaseSkeleton class="h-24 w-full rounded-cp-lg" />
+        </div>
+      </template>
       <BaseEmpty
         v-else-if="error && !profile"
-        title="个人资料加载失败"
+        title="个人信息加载失败"
         :description="error"
         :icon="TriangleAlert"
         surface="none"
@@ -59,6 +68,11 @@ const { profile, subscription, loading, error, load } = useAccountPersonalInfo(a
           本次信息刷新未完成，保留已获取的结果
         </p>
       </template>
+      <BaseEmpty
+        v-else-if="!loading && !canLoadProfile && !subscription"
+        title="暂无订阅信息"
+        surface="none"
+      />
     </div>
     <template #footer>
       <BaseButton variant="secondary" @click="open = false">

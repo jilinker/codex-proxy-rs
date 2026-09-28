@@ -1,18 +1,10 @@
 <script setup lang="ts">
 import type { AccountGroup, ApiKey } from '@/api'
+import { BaseButton, BaseCheckbox, BaseEmpty, BaseInput, BaseModal, BaseTable, BaseTablePagination, defineTableColumns, toast } from '@codex-proxy/ui'
 import { Search } from '@lucide/vue'
 import { computed, shallowRef, watch } from 'vue'
 import { getApiKeys } from '@/api'
 import { getGroupKeyAuthorizations, replaceGroupKeyAuthorizations } from '@/api/modules/account-groups'
-import BaseButton from '@/components/base/BaseButton.vue'
-import BaseCheckbox from '@/components/base/BaseCheckbox.vue'
-import BaseEmpty from '@/components/base/BaseEmpty.vue'
-import BaseInput from '@/components/base/BaseInput.vue'
-import BaseModal from '@/components/base/BaseModal/index.vue'
-import BaseTablePagination from '@/components/base/BaseTable/BaseTablePagination.vue'
-import { defineTableColumns } from '@/components/base/BaseTable/columns'
-import BaseTable from '@/components/base/BaseTable/index.vue'
-import { toast } from '@/components/base/BaseToast'
 import { useRequestState } from '@/composables/useRequestState'
 
 const props = defineProps<{ group: AccountGroup | null }>()

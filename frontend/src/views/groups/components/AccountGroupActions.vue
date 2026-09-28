@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import type { AccountGroup } from '@/api'
+import { BaseIconButton } from '@codex-proxy/ui'
 import { Pencil, Power, ShieldCheck, Trash2 } from '@lucide/vue'
-
-import BaseIconButton from '@/components/base/BaseIconButton.vue'
 
 defineProps<{
   group: AccountGroup

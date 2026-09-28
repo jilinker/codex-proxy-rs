@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { AccountIdentityPresentation, AccountQuotaPresentation } from '../accountPresentation'
+import { BaseIconButton } from '@codex-proxy/ui'
 import { RefreshCw, UserRound } from '@lucide/vue'
-import { shallowRef } from 'vue'
-import BaseIconButton from '@/components/base/BaseIconButton.vue'
+import { computed, shallowRef, watch } from 'vue'
 import AccountProfileModal from '../AccountProfileModal/index.vue'
 import AccountQuotaDetails from './Details.vue'
 import AccountResetCredits from './ResetCredits.vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   account: AccountIdentityPresentation & AccountQuotaPresentation
   refreshing: boolean
   personalInfo?: boolean
@@ -19,14 +19,19 @@ const emit = defineEmits<{
   quotaReset: [accountId: string]
 }>()
 const profileOpen = shallowRef(false)
+const hasPersonalInfo = computed(() => props.personalInfo !== false && ((props.account.capabilities.profile ?? props.account.capabilities.personalInfo ?? false) || props.account.capabilities.subscription))
+watch(hasPersonalInfo, (available) => {
+  if (!available)
+    profileOpen.value = false
+})
 </script>
 
 <template>
   <AccountQuotaDetails :account="account">
     <template #actions>
-      <div v-if="account.authenticationKind !== 'api_key'" class="flex shrink-0 items-center gap-0.5">
+      <div v-if="hasPersonalInfo || (resetCredits !== false && account.capabilities.resetCredits) || (refreshQuota !== false && account.capabilities.quotaRefresh)" class="flex shrink-0 items-center gap-0.5">
         <BaseIconButton
-          v-if="personalInfo && account.provider === 'openai' && account.authenticationKind === 'oauth'"
+          v-if="hasPersonalInfo"
           label="查看个人信息"
           size="sm"
           variant="ghost"
@@ -36,12 +41,12 @@ const profileOpen = shallowRef(false)
           <UserRound class="size-3.5" />
         </BaseIconButton>
         <AccountResetCredits
-          v-if="resetCredits && account.provider === 'openai' && account.authenticationKind === 'oauth'"
+          v-if="resetCredits !== false && account.capabilities.resetCredits"
           :account="account"
           @consumed="emit('quotaReset', $event)"
         />
         <BaseIconButton
-          v-if="refreshQuota"
+          v-if="refreshQuota !== false && account.capabilities.quotaRefresh"
           variant="ghost"
           size="sm"
           label="刷新额度"
@@ -58,7 +63,7 @@ const profileOpen = shallowRef(false)
     </template>
   </AccountQuotaDetails>
   <AccountProfileModal
-    v-if="personalInfo && account.provider === 'openai' && account.authenticationKind === 'oauth'"
+    v-if="hasPersonalInfo"
     v-model="profileOpen"
     :account="account"
   />

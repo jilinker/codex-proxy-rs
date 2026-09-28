@@ -5,14 +5,18 @@ import { computed, shallowRef, watch } from 'vue'
 import { useRequestState } from '@/composables/useRequestState'
 import { useAccountOperations } from './accountOperations'
 
-export function useAccountPersonalInfo(accountId: Ref<string>, open: Ref<boolean>) {
+export function useAccountPersonalInfo({ accountId, open, capabilities }: {
+  accountId: Ref<string>
+  open: Ref<boolean>
+  capabilities: { profile: Readonly<Ref<boolean>>, subscription: Readonly<Ref<boolean>> }
+}) {
   const operations = useAccountOperations()
   const info = shallowRef<AccountPersonalInfoResponse | null>(null)
   const request = useRequestState()
   const { loading } = request
-  const profile = computed(() => info.value?.profile ?? null)
-  const subscription = computed(() => info.value?.subscription ?? null)
-  const error = computed(() => request.error.value || info.value?.profileError || '')
+  const profile = computed(() => capabilities.profile.value ? info.value?.profile ?? null : null)
+  const subscription = computed(() => capabilities.subscription.value ? info.value?.subscription ?? null : null)
+  const error = computed(() => request.error.value || (capabilities.profile.value ? info.value?.profileError : '') || '')
 
   async function load() {
     const targetAccountId = accountId.value
@@ -36,7 +40,7 @@ export function useAccountPersonalInfo(accountId: Ref<string>, open: Ref<boolean
   }
 
   // 打开或切换账号只请求一次；关闭取消等待，刷新按钮复用同一入口。
-  watch([open, accountId], ([isOpen]) => {
+  watch([open, accountId, capabilities.profile, capabilities.subscription], ([isOpen]) => {
     request.invalidate()
     info.value = null
     request.error.value = ''

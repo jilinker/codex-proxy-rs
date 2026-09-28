@@ -1,8 +1,8 @@
 import type { Ref } from 'vue'
 import type { Account, AccountQuotaForecastResponse } from '@/api'
+import { toast } from '@codex-proxy/ui'
 import { onScopeDispose, shallowRef, watch } from 'vue'
 import { refreshAccountQuota } from '@/api'
-import { toast } from '@/components/base/BaseToast'
 import { useAccountOperations } from './accountOperations'
 
 export function useAccountQuotaForecast(
