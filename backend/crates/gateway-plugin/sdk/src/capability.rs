@@ -151,11 +151,13 @@ pub enum Permission {
     PublicEndpoints,
     Groups,
     Keys,
+    KeyBudgets,
+    QuotaObservations,
 }
 
 impl Permission {
     /// 当前公开访问域，安装摘要与授权校验复用同一集合。
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::Network,
         Self::Models,
         Self::Accounts,
@@ -164,6 +166,8 @@ impl Permission {
         Self::PublicEndpoints,
         Self::Groups,
         Self::Keys,
+        Self::KeyBudgets,
+        Self::QuotaObservations,
     ];
 
     #[must_use]
@@ -177,6 +181,8 @@ impl Permission {
             Self::PublicEndpoints => "public_endpoints",
             Self::Groups => "groups",
             Self::Keys => "keys",
+            Self::KeyBudgets => "key_budgets",
+            Self::QuotaObservations => "quota_observations",
         }
     }
 
@@ -192,6 +198,8 @@ impl Permission {
             Self::PublicEndpoints => "公开入口",
             Self::Groups => "专用账号分组",
             Self::Keys => "专用 API Key",
+            Self::KeyBudgets => "API Key 预算",
+            Self::QuotaObservations => "账号额度观测",
         }
     }
 
@@ -203,7 +211,7 @@ impl Permission {
             Self::Models => "查询模型与 API Key 信息并调用模型，可能产生消耗",
             Self::Accounts => "读取和修改账号，包括访问原始凭据",
             Self::Data => {
-                "在管理、命令或维护入口只读查询所有账号的基础信息与已有额度观测，不包含凭据或修改权限"
+                "在管理、命令或维护入口只读查询账号、Key 的基础信息与已有额度观测，不包含凭据或修改权限"
             }
             Self::Requests => "查看和处理请求、响应、路由及账号选择",
             Self::PublicEndpoints => "提供无需登录即可访问的资源与回调入口",
@@ -211,6 +219,12 @@ impl Permission {
                 "创建本插件的分组，可将所有现有及未来新增账号加入或移出这些分组，不修改其他分组"
             }
             Self::Keys => "创建绑定本插件分组的 API Key，不读取密钥明文或修改管理员创建的 Key",
+            Self::QuotaObservations => {
+                "查询所有现有及未来账号的额度观测，并通过宿主刷新上游观测；不读取凭据、不执行上游额度重置"
+            }
+            Self::KeyBudgets => {
+                "查询所有现有及未来新增 Key 的预算、修改日／周金额上限和重置用量，包括管理员和其他插件创建的 Key；不读取密钥或修改其他配置"
+            }
         }
     }
 }
